@@ -6,6 +6,13 @@ from .cart import CartItem
 from .order import Order, OrderItem
 from .review import Review
 from .wishlist import Wishlist
+from .shipment import Shipment
+from .harvest import HarvestSchedule
+from .revenue import RevenueEntry
+from .expense import ExpenseEntry
+from .weekly_report import WeeklyReport
+from .customer_segment import CustomerSegment
+from .chat_log import ChatLog
 
 __all__ = [
     "Category",
@@ -17,4 +24,11 @@ __all__ = [
     "OrderItem",
     "Review",
     "Wishlist",
+    "Shipment",
+    "HarvestSchedule",
+    "RevenueEntry",
+    "ExpenseEntry",
+    "WeeklyReport",
+    "CustomerSegment",
+    "ChatLog",
 ]
