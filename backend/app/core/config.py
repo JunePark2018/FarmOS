@@ -21,6 +21,13 @@ class Settings(BaseSettings):
     SOIL_MOISTURE_LOW: float = 55.0
     SOIL_MOISTURE_HIGH: float = 70.0
 
+    # Ollama (로컬 LLM)
+    OLLAMA_URL: str = "http://localhost:11434"
+    OLLAMA_MODEL: str = "gemma3:4b"
+
+    # 한글 폰트 (PDF 생성용)
+    FONT_PATH: str = "C:/Windows/Fonts/malgun.ttf"
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 

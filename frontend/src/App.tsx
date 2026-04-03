@@ -1,21 +1,21 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { Toaster } from 'react-hot-toast';
-import { ScenarioProvider } from '@/context/ScenarioContext';
-import { AuthProvider, useAuth } from '@/context/AuthContext';
-import AppLayout from '@/components/layout/AppLayout';
-import DashboardPage from '@/pages/DashboardPage';
-import DiagnosisPage from '@/modules/diagnosis/DiagnosisPage';
-import IoTDashboardPage from '@/modules/iot/IoTDashboardPage';
-import ReviewsPage from '@/modules/reviews/ReviewsPage';
-import DocumentsPage from '@/modules/documents/DocumentsPage';
-import WeatherPage from '@/modules/weather/WeatherPage';
-import HarvestPage from '@/modules/harvest/HarvestPage';
-import JournalPage from '@/modules/journal/JournalPage';
-import ScenarioPage from '@/pages/ScenarioPage';
-import LoginPage from '@/modules/auth/LoginPage';
-import SignupPage from '@/modules/auth/SignupPage';
-import FindIdPage from '@/modules/auth/FindIdPage';
-import FindPasswordPage from '@/modules/auth/FindPasswordPage';
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { Toaster } from "react-hot-toast";
+import { ScenarioProvider } from "@/context/ScenarioContext";
+import { AuthProvider, useAuth } from "@/context/AuthContext";
+import AppLayout from "@/components/layout/AppLayout";
+import DashboardPage from "@/pages/DashboardPage";
+import DiagnosisPage from "@/modules/diagnosis/DiagnosisPage";
+import IoTDashboardPage from "@/modules/iot/IoTDashboardPage";
+import ReviewsPage from "@/modules/reviews/ReviewsPage";
+import DocumentsPage from "@/modules/documents/DocumentsPage";
+import WeatherPage from "@/modules/weather/WeatherPage";
+import HarvestPage from "@/modules/harvest/HarvestPage";
+import JournalPage from "@/modules/journal/JournalPage";
+import ScenarioPage from "@/pages/ScenarioPage";
+import LoginPage from "@/modules/auth/LoginPage";
+import SignupPage from "@/modules/auth/SignupPage";
+import FindIdPage from "@/modules/auth/FindIdPage";
+import FindPasswordPage from "@/modules/auth/FindPasswordPage";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth();
@@ -51,13 +51,47 @@ export default function App() {
         <ScenarioProvider>
           <Routes>
             {/* Public auth routes */}
-            <Route path="/login" element={<PublicRoute><LoginPage /></PublicRoute>} />
-            <Route path="/signup" element={<PublicRoute><SignupPage /></PublicRoute>} />
-            <Route path="/find-id" element={<PublicRoute><FindIdPage /></PublicRoute>} />
-            <Route path="/find-password" element={<PublicRoute><FindPasswordPage /></PublicRoute>} />
+            <Route
+              path="/login"
+              element={
+                <PublicRoute>
+                  <LoginPage />
+                </PublicRoute>
+              }
+            />
+            <Route
+              path="/signup"
+              element={
+                <PublicRoute>
+                  <SignupPage />
+                </PublicRoute>
+              }
+            />
+            <Route
+              path="/find-id"
+              element={
+                <PublicRoute>
+                  <FindIdPage />
+                </PublicRoute>
+              }
+            />
+            <Route
+              path="/find-password"
+              element={
+                <PublicRoute>
+                  <FindPasswordPage />
+                </PublicRoute>
+              }
+            />
 
             {/* Protected app routes */}
-            <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
+            <Route
+              element={
+                <ProtectedRoute>
+                  <AppLayout />
+                </ProtectedRoute>
+              }
+            >
               <Route index element={<DashboardPage />} />
               <Route path="diagnosis" element={<DiagnosisPage />} />
               <Route path="iot" element={<IoTDashboardPage />} />
@@ -76,7 +110,7 @@ export default function App() {
             position="top-right"
             toastOptions={{
               duration: 4000,
-              style: { fontSize: '16px', borderRadius: '12px' },
+              style: { fontSize: "16px", borderRadius: "12px" },
             }}
           />
         </ScenarioProvider>
