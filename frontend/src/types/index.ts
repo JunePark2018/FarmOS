@@ -244,3 +244,63 @@ export interface AppNotification {
   module: string;
   read: boolean;
 }
+
+// Journal API types (농업ON format)
+export interface JournalEntryAPI {
+  id: number;
+  user_id: string;
+  work_date: string;
+  field_name: string;
+  crop: string;
+  work_stage: "사전준비" | "경운" | "파종" | "정식" | "작물관리" | "수확";
+  weather: string | null;
+  purchase_pesticide_type: string | null;
+  purchase_pesticide_product: string | null;
+  purchase_pesticide_amount: string | null;
+  purchase_fertilizer_type: string | null;
+  purchase_fertilizer_product: string | null;
+  purchase_fertilizer_amount: string | null;
+  usage_pesticide_type: string | null;
+  usage_pesticide_product: string | null;
+  usage_pesticide_amount: string | null;
+  usage_fertilizer_type: string | null;
+  usage_fertilizer_product: string | null;
+  usage_fertilizer_amount: string | null;
+  detail: string | null;
+  raw_stt_text: string | null;
+  source: "stt" | "text" | "auto";
+  created_at: string;
+  updated_at: string;
+}
+
+export interface JournalListResponse {
+  items: JournalEntryAPI[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+export interface STTParseResult {
+  parsed: Partial<JournalEntryAPI>;
+  confidence: Record<string, number>;
+  unparsed_text: string;
+}
+
+export interface DailySummaryAPI {
+  date: string;
+  entry_count: number;
+  stages_worked: string[];
+  crops: string[];
+  weather: string | null;
+  missing_fields: MissingFieldAlert[];
+  summary_text: string;
+}
+
+export interface MissingFieldAlert {
+  entry_id: number;
+  field_name: string;
+  message: string;
+  work_date: string | null;
+  crop: string | null;
+  created_at: string | null;
+}

@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select
 
-from app.api import auth, health, irrigation, knowledge, sensors
+from app.api import auth, health, irrigation, journal, knowledge, pesticide, sensors
 from app.core.config import settings
 from app.core.database import async_session, close_db, init_db
 from app.core.security import hash_password
@@ -37,9 +37,7 @@ async def seed_users():
     ]
     async with async_session() as db:
         for data in seed_data:
-            exists = await db.execute(
-                select(User).where(User.id == data["id"])
-            )
+            exists = await db.execute(select(User).where(User.id == data["id"]))
             if exists.scalar_one_or_none():
                 continue
             user = User(
@@ -58,8 +56,12 @@ async def seed_users():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    import asyncio
+    from app.core.pesticide_sync import init_pesticide_cache
+
     await init_db()
     await seed_users()
+    asyncio.create_task(init_pesticide_cache())
     yield
     await close_db()
 
@@ -78,4 +80,6 @@ app.include_router(auth.router, prefix=settings.API_V1_PREFIX)
 app.include_router(health.router, prefix=settings.API_V1_PREFIX)
 app.include_router(sensors.router, prefix=settings.API_V1_PREFIX)
 app.include_router(irrigation.router, prefix=settings.API_V1_PREFIX)
+app.include_router(journal.router, prefix=settings.API_V1_PREFIX)
 app.include_router(knowledge.router, prefix=settings.API_V1_PREFIX)
+app.include_router(pesticide.router, prefix=settings.API_V1_PREFIX)
