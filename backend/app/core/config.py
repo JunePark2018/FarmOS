@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     KMA_ENCODING_KEY: str = ""
     KMA_DECODING_KEY: str = ""
 
+    # KAMIS (농산물유통정보 API)
+    KAMIS_API_KEY: str = ""
+    KAMIS_CERT_ID: str = ""
+
     # Sensor thresholds
     SOIL_MOISTURE_LOW: float = 55.0
     SOIL_MOISTURE_HIGH: float = 70.0

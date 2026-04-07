@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { SensorReading, IrrigationEvent, SensorAlert } from '@/types';
 
-const API_BASE = 'http://localhost:8000/api/v1';
+const API_BASE = 'http://iot.lilpa.moe/api/v1';
 const POLL_INTERVAL = 3000; // 3초 간격 폴링
 
 interface SensorData {
@@ -23,12 +23,11 @@ export function useSensorData() {
 
   const fetchAll = useCallback(async () => {
     try {
-      const opts = { credentials: 'include' as RequestCredentials };
       const [latestRes, historyRes, alertsRes, irrigationsRes] = await Promise.all([
-        fetch(`${API_BASE}/sensors/latest`, opts),
-        fetch(`${API_BASE}/sensors/history?limit=100`, opts),
-        fetch(`${API_BASE}/sensors/alerts`, opts),
-        fetch(`${API_BASE}/irrigation/events`, opts),
+        fetch(`${API_BASE}/sensors/latest`),
+        fetch(`${API_BASE}/sensors/history?limit=100`),
+        fetch(`${API_BASE}/sensors/alerts`),
+        fetch(`${API_BASE}/irrigation/events`),
       ]);
 
       const latest = await latestRes.json();
