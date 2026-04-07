@@ -19,19 +19,60 @@ irrigation_events: list[dict] = []
 sensor_alerts: list[dict] = []
 
 
-def _random_soil_moisture() -> float:
-    """토양 습도 센서 미보유 → 20.0~90.0% 난수 생성."""
-    return round(random.uniform(20.0, 90.0), 1)
+# 이전 토양 습도 추정값 (시간 관성용)
+_prev_soil_moisture: float | None = None
+
+
+def _estimate_soil_moisture(temperature: float, humidity: float, light_intensity: float) -> float:
+    """온도·대기 습도·조도를 기반으로 토양 습도를 추정한다.
+
+    원리:
+      - 대기 습도 ↑ → 증발 억제 + 강우 가능성 → 토양 습도 ↑
+      - 온도 ↑     → 증발량 증가              → 토양 습도 ↓
+      - 조도 ↑     → 일사량 증가 → 증발 촉진  → 토양 습도 ↓
+      - 시간 관성   → 토양 습도는 급변하지 않으므로 이전 값과 블렌딩
+    """
+    global _prev_soil_moisture
+
+    # 1) 대기 습도를 기반값으로 출발 (양의 상관)
+    base = humidity * 0.75
+
+    # 2) 온도 보정: 25℃ 기준, 1℃당 ±0.5%
+    temp_effect = (temperature - 25) * 0.5
+
+    # 3) 조도 보정: 0~100% 범위, 높을수록 토양 건조
+    light_effect = (light_intensity / 100) * 3
+
+    # 4) 추정값 산출
+    estimated = base - temp_effect - light_effect
+
+    # 5) 자연스러운 노이즈 (±2%)
+    noise = random.uniform(-2.0, 2.0)
+    estimated += noise
+
+    # 6) 시간 관성: 이전 값 70% + 새 추정값 30% → 부드러운 변화
+    if _prev_soil_moisture is not None:
+        estimated = _prev_soil_moisture * 0.7 + estimated * 0.3
+
+    # 7) 현실적 범위 제한 (20~85%)
+    estimated = max(20.0, min(85.0, estimated))
+    _prev_soil_moisture = estimated
+
+    return round(estimated, 1)
 
 
 def add_reading(device_id: str, sensors: dict, timestamp: datetime | None = None) -> list[dict]:
     """센서 데이터를 저장하고, 임계값 초과 시 알림/관개 이벤트를 자동 생성한다."""
     ts = timestamp or datetime.now(timezone.utc)
 
-    # 토양 습도: ESP8266에서 안 보내면 랜덤 생성
+    # 토양 습도: ESP8266에서 안 보내면 다른 센서값 기반으로 추정
     soil_moisture = sensors.get("soil_moisture")
     if soil_moisture is None:
-        soil_moisture = _random_soil_moisture()
+        soil_moisture = _estimate_soil_moisture(
+            temperature=sensors["temperature"],
+            humidity=sensors["humidity"],
+            light_intensity=sensors["light_intensity"],
+        )
 
     reading = {
         "device_id": device_id,
