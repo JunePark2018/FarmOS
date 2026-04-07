@@ -2,6 +2,8 @@
 import logging
 from sqlalchemy.orm import Session
 
+HISTORY_WINDOW_SIZE = 4
+
 from app.models.chat_log import ChatLog
 from app.models.order import Order
 from app.models.shipment import Shipment
@@ -17,7 +19,7 @@ class ChatbotService:
         self.llm = llm_client
         self.rag = rag_service
 
-    async def answer(self, db: Session, question: str, user_id: int | None = None) -> dict:
+    async def answer(self, db: Session, question: str, user_id: int | None = None, history: list | None = None) -> dict:
         """Process a user question and return an answer with intent and escalation info."""
         # Step 1: Classify intent
         intent = await self._classify_intent(question)
@@ -101,12 +103,20 @@ class ChatbotService:
 
                 if self.llm:
                     try:
+                        history_text = ""
+                        if history:
+                            history_text = "\n".join(
+                                f"{'고객' if h.get('role') == 'user' else '챗봇'}: {h.get('text', '')}"
+                                for h in history[-HISTORY_WINDOW_SIZE:]
+                            )
+                            history_text = f"이전 대화:\n{history_text}\n\n"
                         prompt = (
+                            f"{history_text}"
                             f"고객의 배송 현황 정보:\n{context}\n\n"
                             f"고객 질문: {question}\n\n"
                             "위 정보를 바탕으로 친절하게 답변하세요:"
                         )
-                        return await self.llm.generate(prompt, system="농산물 쇼핑몰 고객지원 챗봇입니다.")
+                        return await self.llm.generate(prompt, system="농산물 쇼핑몰 고객지원 챗봇입니다. 반드시 한국어로만 답변하세요.")
                     except Exception:
                         pass
 
@@ -129,7 +139,7 @@ class ChatbotService:
                     f"현재 인기 상품 재고 현황: {product_info}\n\n"
                     f"고객 질문: {question}\n\n답변:"
                 )
-                return await self.llm.generate(prompt, system="농산물 쇼핑몰 고객지원 챗봇입니다.")
+                return await self.llm.generate(prompt, system="농산물 쇼핑몰 고객지원 챗봇입니다. 반드시 한국어로만 답변하세요.")
             except Exception:
                 pass
 
@@ -150,7 +160,7 @@ class ChatbotService:
 
         if self.rag:
             try:
-                return await self.rag.query(question, collection=collection)
+                return await self.rag.query(question, collection=collection, intent=intent)
             except Exception as e:
                 logger.warning(f"RAG query failed: {e}")
 

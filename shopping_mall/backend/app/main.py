@@ -26,6 +26,18 @@ async def lifespan(app: FastAPI):
         logger.warning(f"Failed to start scheduler: {e}")
         sched = None
 
+    try:
+        from app.routers.chatbot import set_chatbot_service
+        from app.services.ai_chatbot import ChatbotService
+        from ai.llm_client import LLMClient
+        from ai.rag import RAGService
+        llm = LLMClient()
+        rag = RAGService(llm_client=llm)
+        set_chatbot_service(ChatbotService(llm_client=llm, rag_service=rag))
+        logger.info("Chatbot service initialized.")
+    except Exception as e:
+        logger.warning(f"Failed to initialize chatbot service: {e}")
+
     yield
 
     if sched is not None:
