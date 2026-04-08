@@ -161,10 +161,20 @@ export function useDeleteSession() {
         headers: { 'X-User-Id': userId },
       });
     },
-    onSuccess: (_, { userId }) => {
-      // Invalidate and refetch sessions list
+    onSuccess: (_, { userId, sessionId }) => {
+      // Get current active session to check if it's being deleted
+      const activeSession = queryClient.getQueryData(['chat-active-session', userId]) as ChatSession | null | undefined;
+
+      // If the deleted session is the active one, clear it
+      if (activeSession?.id === sessionId) {
+        queryClient.setQueryData(['chat-active-session', userId], null);
+      }
+
+      // Invalidate and refetch sessions list and active session
       queryClient.invalidateQueries({ queryKey: ['chat-sessions', userId] });
+      queryClient.invalidateQueries({ queryKey: ['chat-active-session', userId] });
       queryClient.refetchQueries({ queryKey: ['chat-sessions', userId] });
+      queryClient.refetchQueries({ queryKey: ['chat-active-session', userId] });
     },
   });
 }
