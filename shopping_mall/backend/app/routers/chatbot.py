@@ -40,7 +40,24 @@ async def ask_question(
     db: Session = Depends(get_db)
 ):
     """Submit a question to the AI chatbot."""
-    # Validate that the session exists and belongs to the authenticated user
+    # Guest request: no session validation needed
+    if body.session_id is None:
+        service = _get_chatbot_service()
+        history = [h.model_dump() for h in body.history] if body.history else []
+        result = await service.answer(
+            db,
+            question=body.question,
+            user_id=body.user_id,
+            history=history,
+            session_id=None,
+        )
+        return ChatAnswer(
+            answer=result["answer"],
+            intent=result["intent"],
+            escalated=result["escalated"],
+        )
+
+    # Authenticated request: validate that the session exists and belongs to the authenticated user
     session = db.query(ChatSession).filter(ChatSession.id == body.session_id).first()
     if not session:
         raise HTTPException(status_code=404, detail="Chat session not found")
@@ -49,7 +66,13 @@ async def ask_question(
 
     service = _get_chatbot_service()
     history = [h.model_dump() for h in body.history] if body.history else []
-    result = await service.answer(db, question=body.question, user_id=body.user_id, history=history, session_id=body.session_id)
+    result = await service.answer(
+        db,
+        question=body.question,
+        user_id=body.user_id,
+        history=history,
+        session_id=body.session_id,
+    )
     return ChatAnswer(
         answer=result["answer"],
         intent=result["intent"],
@@ -137,28 +160,33 @@ def create_session(body: ChatSessionCreate, authenticated_user_id: int = Depends
         .first()
     )
 
-    # If there's an existing active session, close it first
-    if existing_active:
-        existing_active.status = "closed"
-        existing_active.closed_at = datetime.now(timezone.utc)
+    # Close existing active session and create new session in a single transaction
+    try:
+        # If there's an existing active session, close it
+        if existing_active:
+            existing_active.status = "closed"
+            existing_active.closed_at = datetime.now(timezone.utc)
+
+        # Create new session
+        session = ChatSession(user_id=body.user_id, status="active")
+        db.add(session)
+        db.flush()
+
+        # Add welcome message to chat log
+        welcome_log = ChatLog(
+            user_id=body.user_id,
+            session_id=session.id,
+            intent="greeting",
+            question="채팅 시작",
+            answer="안녕하세요! FarmOS 마켓 고객지원입니다.\n무엇이든 물어보세요 😊",
+            escalated=False,
+        )
+        db.add(welcome_log)
         db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to create chat session: {str(e)}")
 
-    # Create new session
-    session = ChatSession(user_id=body.user_id, status="active")
-    db.add(session)
-    db.flush()
-
-    # Add welcome message to chat log
-    welcome_log = ChatLog(
-        user_id=body.user_id,
-        session_id=session.id,
-        intent="greeting",
-        question="채팅 시작",
-        answer="안녕하세요! FarmOS 마켓 고객지원입니다.\n무엇이든 물어보세요 😊",
-        escalated=False,
-    )
-    db.add(welcome_log)
-    db.commit()
     db.refresh(session)
 
     # Build response with preview (same logic as list_sessions)
@@ -244,7 +272,24 @@ def get_active_session(
     if not session:
         return None
 
-    return session
+    # Enrich response with message_count and message_preview (matching list_sessions logic)
+    session_response = ChatSessionResponse.model_validate(session)
+
+    # Count messages in this session
+    message_count = db.query(ChatLog).filter(ChatLog.session_id == session.id).count()
+    session_response.message_count = message_count
+
+    # Get the last message for preview
+    last_log = (
+        db.query(ChatLog)
+        .filter(ChatLog.session_id == session.id)
+        .order_by(ChatLog.created_at.desc())
+        .first()
+    )
+    if last_log:
+        session_response.message_preview = last_log.answer
+
+    return session_response
 
 
 @router.post("/sessions/{session_id}/close", response_model=ChatSessionResponse)

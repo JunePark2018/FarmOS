@@ -4,7 +4,7 @@ import { useUserStore } from '@/stores/userStore';
 const navItems = [
   { to: '/admin', label: '대시보드', icon: '📊', end: true },
   { to: '/admin/chatbot', label: '챗봇 관리', icon: '💬', end: false },
-  { to: '/admin/cs-insights', label: 'CS 인사이트', icon: '📊', end: false },
+  { to: '/admin/cs-insights', label: 'CS 인사이트', icon: '💡', end: false },
   { to: '/admin/calendar', label: '판매 캘린더', icon: '📅', end: false },
   { to: '/admin/shipments', label: '배송 관리', icon: '🚚', end: false },
   { to: '/admin/reports', label: '리포트', icon: '📋', end: false },

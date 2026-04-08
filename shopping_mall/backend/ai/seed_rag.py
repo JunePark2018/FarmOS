@@ -6,8 +6,10 @@ import json
 import os
 import sys
 
+from ai import CHROMA_DB_PATH
+
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
-CHROMA_DIR = os.path.join(os.path.dirname(__file__), "..", "chroma_data")
+CHROMA_DIR = CHROMA_DB_PATH
 
 
 def load_json(filename: str) -> list:

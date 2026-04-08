@@ -122,6 +122,9 @@ export function useCloseSession() {
       await queryClient.cancelQueries({ queryKey: ['chat-sessions', userId] });
       await queryClient.cancelQueries({ queryKey: ['chat-active-session', userId] });
 
+      // Save previous active session before clearing it
+      const previousActiveSession = queryClient.getQueryData(['chat-active-session', userId]) as ChatSession | null | undefined;
+
       // Optimistically update sessions list
       const previousSessions = queryClient.getQueryData(['chat-sessions', userId]) as ChatSession[] | undefined;
       if (previousSessions) {
@@ -134,7 +137,7 @@ export function useCloseSession() {
       // Clear active session
       queryClient.setQueryData(['chat-active-session', userId], null);
 
-      return { previousSessions };
+      return { previousSessions, previousActiveSession };
     },
     onSuccess: (closedSession, { userId }) => {
       // Refetch to ensure data is synchronized
@@ -145,6 +148,9 @@ export function useCloseSession() {
       // Revert on error
       if (context?.previousSessions) {
         queryClient.setQueryData(['chat-sessions', userId], context.previousSessions);
+      }
+      if (context?.previousActiveSession !== undefined) {
+        queryClient.setQueryData(['chat-active-session', userId], context.previousActiveSession);
       }
     },
   });

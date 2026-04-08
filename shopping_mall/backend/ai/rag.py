@@ -2,16 +2,20 @@
 import logging
 from typing import Optional
 
+from ai import CHROMA_DB_PATH
+
 logger = logging.getLogger(__name__)
 
 
 class RAGService:
     """RAG service with ChromaDB for document retrieval and LLM for generation."""
 
-    def __init__(self, llm_client, persist_directory: str = "./chroma_data"):
+    def __init__(self, llm_client, persist_directory: str | None = None):
         self.llm_client = llm_client
         self.chroma_client = None
         self._ef = None
+        if persist_directory is None:
+            persist_directory = CHROMA_DB_PATH
         self._init_chroma(persist_directory)
 
     def _init_chroma(self, persist_directory: str):

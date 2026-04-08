@@ -12,7 +12,17 @@ interface Message {
 }
 
 const STORAGE_KEY = 'chat_session_guest';
+const GUEST_ID_KEY = 'guest_chat_id';
 const WELCOME: Message = { id: 'welcome', role: 'bot', text: '안녕하세요! FarmOS 마켓 고객지원입니다.\n무엇이든 물어보세요 😊' };
+
+function getOrCreateGuestId(): number {
+  const existing = sessionStorage.getItem(GUEST_ID_KEY);
+  if (existing) return parseInt(existing, 10);
+  // Generate a temporary guest ID for this session
+  const guestId = Math.floor(Math.random() * 1000000);
+  sessionStorage.setItem(GUEST_ID_KEY, guestId.toString());
+  return guestId;
+}
 
 const QUICK_ACTIONS = [
   { label: '📦 배송 조회', intent: 'delivery', text: '배송 현황을 알고 싶어요' },
@@ -61,12 +71,17 @@ export default function GuestChatWidget() {
   // 메시지 전송
   const { mutate: ask, isPending } = useMutation({
     mutationFn: async ({ question, intent }: { question: string; intent?: string }) => {
+      const guestId = getOrCreateGuestId();
       const { data } = await api.post('/api/chatbot/ask', {
         question,
         user_id: null, // 비회원
         session_id: null, // 비회원은 세션 없음
         history: messages.slice(-4).map(({ role, text }) => ({ role, text })),
         ...(intent ? { intent } : {}),
+      }, {
+        headers: {
+          'X-User-Id': guestId.toString(),
+        },
       });
       return data as { answer: string; intent: string; escalated: boolean };
     },

@@ -28,7 +28,7 @@ class ChatbotService:
         # Step 2: Generate answer based on intent
         escalated = False
         if intent == "delivery":
-            answer_text = await self._handle_delivery(db, question, user_id)
+            answer_text = await self._handle_delivery(db, question, user_id, history)
         elif intent == "stock":
             answer_text = await self._handle_stock(db, question)
         elif intent in ("storage", "season", "exchange"):
@@ -93,7 +93,7 @@ class ChatbotService:
             return "exchange"
         return "other"
 
-    async def _handle_delivery(self, db: Session, question: str, user_id: int | None) -> str:
+    async def _handle_delivery(self, db: Session, question: str, user_id: int | None, history: list | None = None) -> str:
         """Handle delivery-related queries."""
         if user_id:
             orders = (
