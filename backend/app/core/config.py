@@ -45,6 +45,11 @@ class Settings(BaseSettings):
     OPENROUTER_URL: str = "https://openrouter.ai/api/v1"
     OPENROUTER_MODEL: str = "google/gemma-4-31b-it"
 
+    # Groq (Whisper STT)
+    GROQ_API_KEY: str = ""
+    GROQ_STT_URL: str = "https://api.groq.com/openai/v1/audio/transcriptions"
+    GROQ_STT_MODEL: str = "whisper-large-v3"
+
     # 식품안전나라 Open API (농약 DB)
     FOOD_SAFETY_API_KEY: str = ""
 

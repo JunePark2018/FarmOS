@@ -128,6 +128,43 @@ async def _search(
             conf = 0.6 if (crop_filter or disease_filter) else 0.5
             return _pick_best(products, conf)
 
+    # 5순위: 퍼지 매칭 (편집거리 기반 — STT 오인식 보정용)
+    # 예: "오스피란" → "모스피란" 같이 한 글자만 다른 케이스
+    from rapidfuzz import fuzz, process
+
+    stmt = select(PesticideProduct.product_name, PesticideProduct.brand_name)
+    stmt = _apply_filters(stmt)
+    result = await db.execute(stmt)
+    rows = result.all()
+    if rows:
+        candidates: set[str] = set()
+        for product_name, brand_name in rows:
+            if product_name:
+                candidates.add(product_name)
+            if brand_name:
+                candidates.add(brand_name)
+
+        best = process.extractOne(
+            raw_name,
+            list(candidates),
+            scorer=fuzz.ratio,
+            score_cutoff=75,
+        )
+        if best:
+            matched_name = best[0]
+            stmt2 = select(PesticideProduct).where(
+                or_(
+                    PesticideProduct.product_name == matched_name,
+                    PesticideProduct.brand_name == matched_name,
+                )
+            )
+            stmt2 = _apply_filters(stmt2)
+            r2 = await db.execute(stmt2)
+            products = r2.scalars().all()
+            if products:
+                conf = 0.55 if (crop_filter or disease_filter) else 0.4
+                return _pick_best(products, conf)
+
     return None
 
 
