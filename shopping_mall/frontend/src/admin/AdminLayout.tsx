@@ -62,7 +62,7 @@ export default function AdminLayout() {
           <div />
           <div className="flex items-center gap-3">
             <span className="text-sm text-gray-600">
-              {isLoggedIn && user ? `${user.name} (${user.farmos_user_id})` : '관리자'}
+              {isLoggedIn && user ? `${user.name} (${user.login_id})` : '관리자'}
             </span>
             <div className="w-8 h-8 rounded-full bg-[#03C75A] text-white flex items-center justify-center text-sm font-bold">
               {user?.name?.charAt(0) ?? 'A'}

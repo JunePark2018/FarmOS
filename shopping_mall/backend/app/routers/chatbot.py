@@ -45,7 +45,7 @@ def _get_current_user_id(
     # Try to get authenticated user from JWT token
     farmos_user = get_farmos_user_optional(request)
     if farmos_user:
-        # Find or create user in shop database using farmos_user_id
+        # Find or create user in shop database using login_user_id
         user = db.query(User).filter(User.user_id == farmos_user.user_id).first()
         if not user:
             user = User(

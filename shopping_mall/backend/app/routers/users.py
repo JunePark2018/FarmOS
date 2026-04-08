@@ -76,7 +76,7 @@ def auth_status(request: Request, db: Session = Depends(get_db)):
 
     return {
         "authenticated": True,
-        "user_id": user_id,
+        "login_id": user_id,
         "name": name,
         "shop_user_id": user.id,
     }
