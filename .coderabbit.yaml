@@ -1,0 +1,207 @@
+# CodeRabbit Configuration for FarmOS Team
+# 팀 전체가 사용하는 통합 코드 리뷰 설정
+
+language: ko
+
+# PR 리뷰 설정
+reviews:
+  review_status: true                    # PR 체크 표시
+  request_changes_workflow: true         # 변경 요청 가능
+  high_level_summary: true               # 상위 요약
+  poem: false                            # 시 제외
+  collapse_walkthrough: false            # 상세 설명 펼침
+  auto_review:
+    enabled: true
+    drafts: false                        # 드래프트 PR 제외
+    base_branches:
+      - main
+      - develop
+      - dev
+
+# 무시할 파일/디렉토리
+ignore:
+  - "**/.venv/**"
+  - "**/__pycache__/**"
+  - "**/node_modules/**"
+  - "**/.git/**"
+  - "**/*.lock"
+  - ".env*"
+  - "*.pyc"
+  - "*.pyo"
+  - ".DS_Store"
+  - "*.min.js"
+  - "*.min.css"
+
+# 코드 스타일 및 컨벤션 검사
+rules:
+  python:
+    # 패키지 임포트 순서
+    - name: import_order
+      description: "표준 라이브러리 → 서드파티 → 로컬 임포트 순서"
+
+    # 라인 길이 (ruff 기준 100자)
+    - name: line_length
+      description: "최대 100자 권장 (pyproject.toml 참고)"
+
+    # 함수/클래스 명명
+    - name: naming_convention
+      description: |
+        - 함수/변수: snake_case
+        - 클래스: PascalCase
+        - 상수: UPPER_SNAKE_CASE
+        - Private: _leading_underscore
+
+    # 타입 힌팅
+    - name: type_hints
+      description: |
+        함수 서명에 타입 힌팅 권장
+        SQLAlchemy Mapped[] 사용 (models)
+        Pydantic BaseModel 스키마 활용
+
+    # 비동기 코드
+    - name: async_await
+      description: |
+        async def / await 일관성 확인
+        FastAPI 핸들러는 async 권장
+
+    # 데이터베이스
+    - name: db_patterns
+      description: |
+        ✓ SQLAlchemy 2.0+ 패턴 (Mapped[])
+        ✓ db: Session 의존성 주입
+        ✓ ORM 쿼리 사용 (쿼리 빌더)
+        ✗ 원본 SQL 쿼리 지양
+
+    # RAG/임베딩
+    - name: rag_patterns
+      description: |
+        - ChromaDB 컬렉션 관리
+        - 청킹 전략 명확히
+        - 임베딩 모델 일관성
+
+  frontend:
+    # JavaScript/TypeScript
+    - name: ts_config
+      description: "strict mode 권장"
+
+    - name: react_patterns
+      description: |
+        - 함수형 컴포넌트
+        - hooks 사용
+        - key prop 필수 (lists)
+
+# 리뷰 포커스 (우선순위 순)
+focus:
+  - name: "보안 (Security)"
+    priority: critical
+    checklist:
+      - SQL injection, ORM 안전성
+      - XSS, CSR 취약점
+      - 민감 정보 노출 (API key, password)
+      - 입력값 검증 (Pydantic)
+      - 인증/권한 관리
+
+  - name: "성능 (Performance)"
+    priority: high
+    checklist:
+      - N+1 쿼리 (SQLAlchemy lazy loading)
+      - DB 인덱스 활용
+      - RAG 임베딩/검색 최적화
+      - 불필요한 루프/반복
+      - 메모리 누수
+
+  - name: "코드 품질 (Code Quality)"
+    priority: high
+    checklist:
+      - 가독성과 명확성
+      - 함수/변수/클래스명이 의도 반영
+      - DRY 원칙 (반복 코드)
+      - 적절한 에러 처리
+      - 로깅 수준
+
+  - name: "아키텍처 (Architecture)"
+    priority: medium
+    checklist:
+      - FastAPI 라우터 구조
+      - 의존성 주입 (deps.py)
+      - 모델/스키마 분리
+      - 서비스 계층 사용
+      - 설정 관리 (config.py)
+
+  - name: "테스트 (Testing)"
+    priority: medium
+    checklist:
+      - 주요 로직 테스트 작성
+      - Edge case 커버리지
+      - 통합 테스트 (DB 포함)
+      - Mock 사용 적절성
+
+  - name: "FarmOS 특화 (Domain-Specific)"
+    priority: medium
+    checklist:
+      - RAG 시스템 (임베딩, 청킹, 검색)
+      - ChromaDB 활용
+      - IoT 센서 데이터 처리
+      - 농산물 도메인 로직
+
+# 상세 리뷰 지시사항 (프롬프트)
+instructions: |
+  ## FarmOS 팀 코드 리뷰 가이드
+
+  다음 관점에서 한국어로 상세히 리뷰해주세요.
+
+  ### 1. 보안 (필수)
+  - SQL injection: ORM 쿼리 사용 확인, 원본 SQL 지양
+  - 입력값 검증: Pydantic 스키마 활용
+  - 민감한 정보 노출: API key, 비밀번호 등
+  - CORS, 인증 설정
+
+  ### 2. 성능 (필수)
+  - SQLAlchemy N+1 쿼리: joinedload() 활용
+  - DB 인덱스 고려
+  - RAG 성능: 임베딩 캐싱, 배치 처리
+  - 무한 루프/블로킹 작업
+
+  ### 3. 코드 스타일 (필수)
+  - snake_case, PascalCase 준수
+  - 100자 라인 길이 (ruff 설정)
+  - 타입 힌팅 권장
+  - 명확한 변수/함수명
+
+  ### 4. 아키텍처 (권장)
+  - FastAPI 라우터/스키마 분리
+  - 의존성 주입 (Depends)
+  - 서비스 계층 활용
+  - config.py에서 설정 관리
+
+  ### 5. 테스트 (권장)
+  - 주요 기능 테스트 작성
+  - 통합 테스트 (DB 포함)
+  - Mock 사용 적절성
+
+  ### 6. FarmOS 특화 (도메인 중심)
+  - RAG 시스템: 임베딩 모델, 청킹, 검색 전략
+  - ChromaDB: 컬렉션 관리, 메타데이터
+  - IoT: 센서 데이터 처리, 정규화
+  - 농산물: 도메인 로직 일관성
+
+  ### 피드백 작성 규칙
+  - 구체적인 개선 방안 제시
+  - 코드 예시 포함
+  - 문제가 없으면 칭찬
+  - 비판적이지만 건설적으로
+
+# PR 크기별 리뷰 깊이
+review_complexity:
+  small:      # 최대 100줄
+    depth: basic
+    focus: [security, style]
+
+  medium:     # 100-500줄
+    depth: detailed
+    focus: [security, performance, quality]
+
+  large:      # 500줄 이상
+    depth: comprehensive
+    focus: [security, performance, architecture, tests]
+    request_changes: true
