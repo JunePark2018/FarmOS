@@ -1,5 +1,6 @@
 """AI-powered chatbot service with fallback to rule-based responses."""
 import logging
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 HISTORY_WINDOW_SIZE = 4
@@ -19,7 +20,7 @@ class ChatbotService:
         self.llm = llm_client
         self.rag = rag_service
 
-    async def answer(self, db: Session, question: str, user_id: int | None = None, history: list | None = None) -> dict:
+    async def answer(self, db: Session, question: str, user_id: int | None = None, history: list | None = None, session_id: int | None = None) -> dict:
         """Process a user question and return an answer with intent and escalation info."""
         # Step 1: Classify intent
         intent = await self._classify_intent(question)
@@ -39,6 +40,7 @@ class ChatbotService:
         # Step 3: Save chat log
         log = ChatLog(
             user_id=user_id,
+            session_id=session_id,
             intent=intent,
             question=question,
             answer=answer_text,
@@ -47,6 +49,18 @@ class ChatbotService:
         db.add(log)
         db.commit()
         db.refresh(log)
+
+        # Step 4: Update session metadata
+        if session_id:
+            from app.models.chat_session import ChatSession
+            session = db.query(ChatSession).filter(ChatSession.id == session_id).first()
+            if session:
+                # Set title from first question if not set
+                if not session.title:
+                    session.title = question[:50]
+                # Update last message time (auto-updated by onupdate trigger)
+                db.add(session)
+                db.commit()
 
         return {
             "answer": answer_text,

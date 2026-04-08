@@ -19,6 +19,7 @@ class ChatQuestion(BaseModel):
 
     question: str
     user_id: Optional[int] = None
+    session_id: Optional[int] = None
     history: List[ChatHistoryItem] = []
 
 

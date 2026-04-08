@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.database import Base, engine
 from app.routers import products, categories, cart, orders, users, reviews, stores, wishlists
 from app.routers import shipments, calendar, reports, analytics, chatbot
+from app import models  # noqa: F401 - Import models to register them with Base
 
 logger = logging.getLogger(__name__)
 
