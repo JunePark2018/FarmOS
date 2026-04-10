@@ -345,3 +345,43 @@ export interface ImportantChange {
   changePercent: number;
   direction: "up" | "down";
 }
+
+// AI Agent
+export interface AIControlState {
+  ventilation: { window_open_pct: number; fan_speed: number };
+  irrigation: {
+    valve_open: boolean;
+    daily_total_L: number;
+    last_watered: string | null;
+    nutrient: { N: number; P: number; K: number };
+  };
+  lighting: { on: boolean; brightness_pct: number };
+  shading: { shade_pct: number; insulation_pct: number };
+}
+
+export interface AIDecision {
+  id: string;
+  timestamp: string;
+  control_type: string;
+  action: Record<string, unknown>;
+  reason: string;
+  priority: string;
+  source: "rule" | "llm" | "manual";
+}
+
+export interface CropProfile {
+  name: string;
+  growth_stage: string;
+  optimal_temp: [number, number];
+  optimal_humidity: [number, number];
+  optimal_light_hours: number;
+  nutrient_ratio: { N: number; P: number; K: number };
+}
+
+export interface AIAgentStatus {
+  enabled: boolean;
+  control_state: AIControlState;
+  crop_profile: CropProfile;
+  latest_decision: AIDecision | null;
+  total_decisions: number;
+}

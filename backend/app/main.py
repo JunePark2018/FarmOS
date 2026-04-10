@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select
 
 from app.api import (
+    ai_agent,
     auth,
     health,
     irrigation,
@@ -89,3 +90,4 @@ app.include_router(journal.router, prefix=settings.API_V1_PREFIX)
 app.include_router(knowledge.router, prefix=settings.API_V1_PREFIX)
 app.include_router(pesticide.router, prefix=settings.API_V1_PREFIX)
 app.include_router(market.router, prefix=settings.API_V1_PREFIX)
+app.include_router(ai_agent.router, prefix=settings.API_V1_PREFIX)

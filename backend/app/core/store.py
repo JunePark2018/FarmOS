@@ -1,5 +1,6 @@
 """인메모리 센서 데이터 저장소. 시연용으로 서버 재시작 시 초기화된다."""
 
+import asyncio
 import random
 from collections import deque
 from datetime import datetime, timezone
@@ -121,6 +122,14 @@ def add_reading(device_id: str, sensors: dict, timestamp: datetime | None = None
         }
         sensor_alerts.append(alert)
         new_alerts.append(alert)
+
+    # AI Agent에 센서 데이터 전달 (비동기, 실패해도 무시)
+    try:
+        from app.core.ai_agent import process_sensor_data
+
+        asyncio.ensure_future(process_sensor_data(sensors))
+    except Exception:
+        pass  # Agent 오류가 센서 저장에 영향 주지 않도록
 
     return new_alerts
 

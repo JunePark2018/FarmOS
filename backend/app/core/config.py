@@ -17,6 +17,7 @@ class Settings(BaseSettings):
         "http://localhost:5173",
         "http://localhost:5174",
         "http://localhost:3000",
+        "http://iot.lilpa.moe"
     ]
 
     # ChromaDB (벡터 데이터베이스)
@@ -47,6 +48,15 @@ class Settings(BaseSettings):
 
     # 식품안전나라 Open API (농약 DB)
     FOOD_SAFETY_API_KEY: str = ""
+
+    # AI Agent (IoT 자동 제어)
+    AI_AGENT_MODEL: str = "openai/gpt-5-nano"
+    AI_AGENT_LLM_INTERVAL: int = 300  # LLM 호출 최소 간격 (초)
+    AI_AGENT_RULE_INTERVAL: int = 30  # 규칙 판단 간격 (초)
+
+    # 농장 위치 (기상청 격자좌표)
+    FARM_NX: int = 84   # 경북 상주 기준
+    FARM_NY: int = 106
 
     # 한글 폰트 (PDF 생성용)
     FONT_PATH: str = "C:/Windows/Fonts/malgun.ttf"
