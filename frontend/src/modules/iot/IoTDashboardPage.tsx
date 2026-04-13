@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, memo, useCallback } from 'react';
 import { MdWaterDrop, MdThermostat, MdOpacity, MdWbSunny, MdWarning, MdWifiOff, MdClose } from 'react-icons/md';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, BarChart, Bar, Cell } from 'recharts';
 import { useSensorData } from '@/hooks/useSensorData';
+import AIAgentPanel from './AIAgentPanel';
 
 function SensorCard({ icon: Icon, label, value, unit, color, threshold, warning, disabled }: {
   icon: React.ElementType; label: string; value: number | null; unit: string;
@@ -436,6 +437,9 @@ export default function IoTDashboardPage() {
           )}
         </div>
       </div>
+
+      {/* AI Agent 제어 패널 */}
+      <AIAgentPanel />
 
       {irrigationModalOpen && (
         <IrrigationModal

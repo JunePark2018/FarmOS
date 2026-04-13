@@ -1,3 +1,5 @@
+import asyncio
+import json
 import random
 from collections import deque
 from datetime import datetime, timezone
@@ -10,6 +12,31 @@ MAX_READINGS = 2000
 sensor_readings: deque[dict] = deque(maxlen=MAX_READINGS)
 irrigation_events: list[dict] = []
 sensor_alerts: list[dict] = []
+
+# --- SSE broadcast ---
+_sse_subscribers: list[asyncio.Queue] = []
+
+
+def sse_subscribe() -> asyncio.Queue:
+    q: asyncio.Queue = asyncio.Queue()
+    _sse_subscribers.append(q)
+    return q
+
+
+def sse_unsubscribe(q: asyncio.Queue) -> None:
+    try:
+        _sse_subscribers.remove(q)
+    except ValueError:
+        pass
+
+
+def _broadcast(event_type: str, payload: dict) -> None:
+    msg = f"event: {event_type}\ndata: {json.dumps(payload)}\n\n"
+    for q in list(_sse_subscribers):
+        try:
+            q.put_nowait(msg)
+        except asyncio.QueueFull:
+            pass
 
 
 # 이전 토양 습도 추정값 (시간 관성용)
@@ -78,6 +105,7 @@ def add_reading(device_id: str, sensors: dict, timestamp: datetime | None = None
         "lightIntensity": sensors["light_intensity"],
     }
     sensor_readings.appendleft(reading)
+    _broadcast("sensor", reading)
 
     new_alerts: list[dict] = []
 
@@ -92,15 +120,18 @@ def add_reading(device_id: str, sensors: dict, timestamp: datetime | None = None
         }
         sensor_alerts.append(alert)
         new_alerts.append(alert)
+        _broadcast("alert", alert)
 
-        irrigation_events.append({
+        irr_event = {
             "id": str(uuid4()),
             "triggeredAt": ts.isoformat(),
             "reason": f"토양 습도 {soil_moisture}% — 임계값({settings.SOIL_MOISTURE_LOW}%) 이하",
             "valveAction": "열림",
             "duration": 30,
             "autoTriggered": True,
-        })
+        }
+        irrigation_events.append(irr_event)
+        _broadcast("irrigation", irr_event)
 
     if sensors["humidity"] > 90:
         alert = {
@@ -113,6 +144,7 @@ def add_reading(device_id: str, sensors: dict, timestamp: datetime | None = None
         }
         sensor_alerts.append(alert)
         new_alerts.append(alert)
+        _broadcast("alert", alert)
 
     return new_alerts
 
@@ -155,4 +187,5 @@ def add_irrigation_event(valve_action: str, reason: str) -> dict:
         "autoTriggered": False,
     }
     irrigation_events.append(event)
+    _broadcast("irrigation", event)
     return event

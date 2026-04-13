@@ -103,6 +103,64 @@ export interface AIStrategy {
   priority: "높음" | "중간" | "낮음";
 }
 
+// Review Analysis API Types
+export interface AnalysisResult {
+  analysis_id: number;
+  analysis_type: string;
+  target_scope: string;
+  review_count: number;
+  sentiment_summary: SentimentSummary;
+  keywords: KeywordData[];
+  summary: ReviewSummary;
+  trends: TrendData[];
+  anomalies: AnomalyAlert[];
+  processing_time_ms: number;
+  llm_provider: string;
+  llm_model: string;
+  created_at: string | null;
+}
+
+export interface ReviewSummary {
+  overall: string;
+  positives: string[];
+  negatives: string[];
+  suggestions: string[];
+}
+
+export interface TrendData {
+  week: string;
+  positive: number;
+  negative: number;
+  neutral: number;
+  total: number;
+  positive_ratio: number;
+  negative_ratio: number;
+  neutral_ratio: number;
+}
+
+export interface AnomalyAlert {
+  week: string;
+  type: string;
+  value: number;
+  expected: number;
+  deviation: number;
+  message: string;
+}
+
+export interface SearchResult {
+  id: string;
+  text: string;
+  similarity: number;
+  metadata: Record<string, unknown>;
+}
+
+export interface AnalysisSettings {
+  auto_batch_enabled: boolean;
+  batch_trigger_count: number;
+  batch_schedule: string | null;
+  default_batch_size: number;
+}
+
 // Documents
 export interface DocumentTemplate {
   id: string;
@@ -351,4 +409,44 @@ export interface ImportantChange {
   previousPrice: number;
   changePercent: number;
   direction: "up" | "down";
+}
+
+// AI Agent
+export interface AIControlState {
+  ventilation: { window_open_pct: number; fan_speed: number };
+  irrigation: {
+    valve_open: boolean;
+    daily_total_L: number;
+    last_watered: string | null;
+    nutrient: { N: number; P: number; K: number };
+  };
+  lighting: { on: boolean; brightness_pct: number };
+  shading: { shade_pct: number; insulation_pct: number };
+}
+
+export interface AIDecision {
+  id: string;
+  timestamp: string;
+  control_type: string;
+  action: Record<string, unknown>;
+  reason: string;
+  priority: string;
+  source: "rule" | "llm" | "manual";
+}
+
+export interface CropProfile {
+  name: string;
+  growth_stage: string;
+  optimal_temp: [number, number];
+  optimal_humidity: [number, number];
+  optimal_light_hours: number;
+  nutrient_ratio: { N: number; P: number; K: number };
+}
+
+export interface AIAgentStatus {
+  enabled: boolean;
+  control_state: AIControlState;
+  crop_profile: CropProfile;
+  latest_decision: AIDecision | null;
+  total_decisions: number;
 }

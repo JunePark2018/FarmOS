@@ -1,0 +1,17 @@
+{
+  "feature": "farmos_review_analysis",
+  "phase": "archived",
+  "level": "Dynamic",
+  "teamMode": false,
+  "startedAt": "2026-04-13T00:00:00Z",
+  "iterationCount": 0,
+  "matchRate": 96,
+  "archivedAt": "2026-04-13T16:15:00Z",
+  "archivedTo": "docs/archive/2026-04/farmos_review_analysis/",
+  "priorWork": {
+    "feature": "review-analysis-automation",
+    "archivedAt": "2026-04-10",
+    "matchRate": 96,
+    "archivePath": "docs/archive/2026-04/review-analysis-automation/"
+  }
+}
