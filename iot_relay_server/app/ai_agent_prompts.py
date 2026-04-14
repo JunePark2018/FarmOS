@@ -38,7 +38,7 @@ SYSTEM_PROMPT = """당신은 스마트팜 온실 AI 관리자입니다.
 """
 
 
-def build_trigger_prompt(sensor_data: dict, reliability: dict, weather: dict = None, control_st: dict = None, crop_prof: dict = None) -> str:
+def build_trigger_prompt(sensor_data: dict, reliability: dict, weather: dict | None = None, control_st: dict | None = None, crop_prof: dict | None = None) -> str:
     """LLM에게 전달할 트리거 메시지. 센서/기상/제어 상태를 직접 포함."""
     now = datetime.now(KST)
     is_day = 6 <= now.hour < 20

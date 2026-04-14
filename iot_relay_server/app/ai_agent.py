@@ -65,17 +65,15 @@ CROP_PRESETS: dict[str, dict] = {
 
 # ─── 규칙 기반 판단 (긴급 대응 — 30초마다 실행) ───
 
-def _apply_rules(sensor_data: dict, weather: dict) -> list[dict]:
-    """규칙 기반 즉시 대응. 긴급/이상 상황에서 LLM 없이 바로 제어."""
+def _apply_emergency_rules(sensor_data: dict, weather: dict) -> list[dict]:
+    """긴급/이상 상황 규칙. 고온·고습·강수·토양수분·동해 방지."""
     decisions: list[dict] = []
     temp = sensor_data["temperature"]
     humidity = sensor_data["humidity"]
     soil = sensor_data.get("soil_moisture") or 50
-    light = sensor_data.get("light_intensity", 0)
     now = datetime.now(KST)
     is_night = now.hour >= 20 or now.hour < 6
     ext_temp = weather.get("current", {}).get("temperature")
-    optimal_temp = crop_profile.get("optimal_temp", [20, 28])
 
     precip = weather.get("current", {}).get("precipitation", 0)
     precip_type = weather.get("current", {}).get("precipitation_type", "없음")
@@ -121,6 +119,19 @@ def _apply_rules(sensor_data: dict, weather: dict) -> list[dict]:
         control_state["shading"]["insulation_pct"] = ins
         decisions.append(_record_decision("shading", control_state["shading"], f"야간 외부 {ext_temp}C — 보온커튼 {ins}%.", "medium", "rule"))
 
+    return decisions
+
+
+def _apply_general_rules(sensor_data: dict, weather: dict) -> list[dict]:
+    """회복/정상화 및 조명/차광 규칙."""
+    decisions: list[dict] = []
+    temp = sensor_data["temperature"]
+    humidity = sensor_data["humidity"]
+    soil = sensor_data.get("soil_moisture") or 50
+    light = sensor_data.get("light_intensity", 0)
+    now = datetime.now(KST)
+    is_night = now.hour >= 20 or now.hour < 6
+
     # ── 일반: 온도/습도 정상 시 환기 해제 ──
     temp_ok = temp <= 30
     humidity_ok = humidity <= 80
@@ -164,6 +175,14 @@ def _apply_rules(sensor_data: dict, weather: dict) -> list[dict]:
         control_state["lighting"] = {"on": False, "brightness_pct": 0}
         decisions.append(_record_decision("lighting", control_state["lighting"], "야간 암기 유지 — 조명 OFF.", "low", "rule"))
 
+    return decisions
+
+
+def _apply_rules(sensor_data: dict, weather: dict) -> list[dict]:
+    """규칙 기반 즉시 대응. 긴급/이상 상황에서 LLM 없이 바로 제어."""
+    decisions: list[dict] = []
+    decisions.extend(_apply_emergency_rules(sensor_data, weather))
+    decisions.extend(_apply_general_rules(sensor_data, weather))
     return decisions
 
 

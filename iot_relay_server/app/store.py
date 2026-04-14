@@ -64,8 +64,8 @@ def _estimate_soil_moisture(temperature: float, humidity: float, light_intensity
     # 3) 온도 보정: 20℃ 기준, 1℃당 -0.4%
     temp_effect = (temperature - 20) * 0.4
 
-    # 4) 조도 보정: 높을수록 건조 (0~100,000 lux 범위에서 최대 -10%p)
-    light_effect = (light_intensity / 100_000) * 10
+    # 4) 조도 보정: 높을수록 건조 (펌웨어 0~100% 범위에서 최대 -10%p)
+    light_effect = (light_intensity / 100) * 10
 
     # 5) 추정값 산출
     estimated = base + humidity_effect - temp_effect - light_effect

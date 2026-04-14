@@ -105,7 +105,7 @@ async def get_weather(sensor_data: dict | None = None) -> dict:
         if current:
             # KMA 실황 API는 예보를 포함하지 않으므로 mock 예보로 보충
             mock = _generate_mock_weather(sensor_data)
-            result = {"current": current, "forecasts": mock["forecasts"], "source": "kma"}
+            result = {"current": current, "forecasts": mock["forecasts"], "source": {"current": "kma", "forecasts": "mock"}}
             _cache = result
             _cache_expiry = now + CACHE_TTL
             return result
