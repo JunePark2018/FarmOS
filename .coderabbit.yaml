@@ -59,9 +59,6 @@ reviews:
         [백엔드] shopping_mall/backend/app/routers/에 라우터 추가, SQLAlchemy 동기 Session 사용 일관성, Pydantic 입력값 검증
         [프론트엔드] 모든 API 호출에 credentials: "include" 포함, 에러 핸들링, 타입 안전성
 
-# 리뷰 톤 (간결하게 — 상세 지침은 path_instructions에 있음)
-tone_instructions: "한국어로 리뷰. 구체적인 개선 방안과 코드 예시를 함께 제시. 문제가 없으면 칭찬. 건설적이고 명확하게."
-
 # 코드 가이드라인 및 기준
 # 자세한 내용은 CODERABBIT_GUIDELINES.md 참고
 knowledge_base:
