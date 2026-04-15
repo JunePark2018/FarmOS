@@ -59,6 +59,7 @@ class UserResponse(BaseModel):
     name: str
     email: str
     location: str
+    location_category: str = "" # 💡 프론트엔드 편의를 위한 파싱된 지역명
     area: float
     farmname: str
     profile: str

@@ -12,9 +12,9 @@ from app.models.pesticide import PesticideProduct
 API_BASE = "http://openapi.foodsafetykorea.go.kr/api"
 SERVICE_ID = "I1910"
 PAGE_SIZE = 500
-REQUEST_DELAY = 0.3
-MAX_RETRIES = 1
-REQUEST_TIMEOUT = 5.0
+REQUEST_DELAY = 1.0
+MAX_RETRIES = 2
+REQUEST_TIMEOUT = 30.0
 
 
 async def _fetch_page(
@@ -25,11 +25,15 @@ async def _fetch_page(
 
     for attempt in range(MAX_RETRIES + 1):
         try:
-            resp = await client.get(url)
+            resp = await client.get(
+                url,
+                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+            )
             resp.raise_for_status()
 
             raw = resp.text
             if raw.strip().startswith("<"):
+                print(f"HTML error snippet: {raw[:200]}")
                 raise ValueError("HTML response")
 
             data = resp.json()
@@ -48,6 +52,8 @@ async def _fetch_page(
                 await asyncio.sleep(0.5)
                 continue
             raise
+
+    return [], 0
 
 
 def _extract_row(row: dict) -> dict:

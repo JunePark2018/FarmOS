@@ -19,6 +19,7 @@ import LoginPage from '@/modules/auth/LoginPage';
 import OnboardingPage from '@/modules/auth/OnboardingPage';
 import FindIdPage from '@/modules/auth/FindIdPage';
 import FindPasswordPage from '@/modules/auth/FindPasswordPage';
+import DiagnosisChatPage from '@/modules/diagnosis/chat/DiagnosisChatPage';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading, needsOnboarding } = useAuth();
@@ -65,6 +66,7 @@ export default function App() {
             <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
               <Route index element={<DashboardPage />} />
               <Route path="diagnosis" element={<DiagnosisPage />} />
+              <Route path="diagnosis/chat" element={<DiagnosisChatPage />} />
               <Route path="iot" element={<IoTDashboardPage />} />
               <Route path="reviews" element={<ReviewsPage />} />
               <Route path="documents" element={<DocumentsPage />} />

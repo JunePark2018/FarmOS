@@ -12,6 +12,7 @@ export interface AuthUser {
   onboarding_completed: boolean;
   farmname: string;
   location: string;
+  location_category: string; // 💡 백엔드에서 파싱된 지역명 추가
   area: number;
   main_crop: string;
   crop_variety: string;
@@ -73,6 +74,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           onboarding_completed: data.onboarding_completed ?? false,
           farmname: data.farmname ?? '',
           location: data.location ?? '',
+          location_category: data.location_category ?? '', // 💡 백엔드에서 받은 파싱된 지역명
           area: data.area ?? 0,
           main_crop: data.main_crop ?? '',
           crop_variety: data.crop_variety ?? '',

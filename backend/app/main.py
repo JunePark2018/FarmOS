@@ -14,12 +14,15 @@ from app.api import (
     pesticide,
     review_analysis,
     sensors,
+    diagnosis,
 )
 from app.core.config import settings
 from app.core.database import async_session, close_db, init_db
 from app.core.security import hash_password
 from app.models.user import User  # noqa: F401 — Base.metadata 등록용
 from app.models.review_analysis import ReviewAnalysis, ReviewSentiment  # noqa: F401
+from app.models.diagnosis import DiagnosisHistory  # noqa: F401
+from app.models.journal import JournalEntry  # noqa: F401
 
 
 async def seed_users():
@@ -67,8 +70,15 @@ async def seed_users():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    import asyncio
+    from app.core.pesticide_sync import init_pesticide_cache
+
     await init_db()
     await seed_users()
+    
+    # 서버 구동을 지연시키지 않고 백그라운드 태스크로 농약 데이터 동기화 실행
+    asyncio.create_task(init_pesticide_cache())
+    
     yield
     await close_db()
 
@@ -92,3 +102,4 @@ app.include_router(knowledge.router, prefix=settings.API_V1_PREFIX)
 app.include_router(pesticide.router, prefix=settings.API_V1_PREFIX)
 app.include_router(market.router, prefix=settings.API_V1_PREFIX)
 app.include_router(review_analysis.router, prefix=settings.API_V1_PREFIX)
+app.include_router(diagnosis.router, prefix=settings.API_V1_PREFIX)

@@ -75,9 +75,20 @@ def _set_refresh_cookie(response: Response, token: str):
 
 def _user_response(user: User) -> UserResponse:
     """User 모델 → UserResponse 변환 헬퍼."""
+    # 💡 주소 앞부분을 파싱하여 지역 카테고리 추출 (프론트엔드 편의용)
+    REGIONS = [
+        "서울", "인천", "대전", "대구", "광주", "부산", "울산", "세종",
+        "경기", "강원", "충북", "충남", "전북", "전남", "경북", "경남", "제주"
+    ]
+    location_category = ""
+    if user.location:
+        location_category = next((r for r in REGIONS if user.location.startswith(r)), "")
+
     return UserResponse(
         user_id=user.id, name=user.name, email=user.email,
-        location=user.location, area=user.area, farmname=user.farmname,
+        location=user.location, 
+        location_category=location_category, # 💡 파싱된 값 추가
+        area=user.area, farmname=user.farmname,
         profile=user.profile, status=user.status,
         onboarding_completed=user.onboarding_completed,
         main_crop=user.main_crop, crop_variety=user.crop_variety,
