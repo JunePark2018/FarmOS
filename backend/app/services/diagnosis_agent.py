@@ -302,7 +302,7 @@ async def generate_diagnosis(state: DiagnosisState) -> dict:
     llm = ChatOpenAI(
         model=model_name,
         api_key=api_key,
-        base_url="https://openrouter.ai/api/v1",
+        base_url=os.getenv("OPENROUTER_URL", "https://litellm.lilpa.moe/v1"),
         temperature=0.0
     )
 

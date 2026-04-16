@@ -43,7 +43,7 @@ class Settings(BaseSettings):
 
     # OpenRouter (LLM API)
     OPENROUTER_API_KEY: str = ""
-    OPENROUTER_URL: str = "https://openrouter.ai/api/v1"
+    OPENROUTER_URL: str = "https://litellm.lilpa.moe/v1"
     OPENROUTER_MODEL: str = "google/gemma-4-31b-it"
 
     # Groq (Whisper STT)
