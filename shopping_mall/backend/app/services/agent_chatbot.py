@@ -1,10 +1,14 @@
 """에이전트 기반 챗봇 서비스 — ChatbotService와 동일한 인터페이스."""
 import logging
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING
 
 from sqlalchemy.orm import Session
 
 from ai.agent import AgentExecutor
+
+if TYPE_CHECKING:
+    from ai.agent import ToolMetricData
 
 logger = logging.getLogger(__name__)
 
@@ -66,12 +70,52 @@ class AgentChatbotService:
 
         db.commit()
 
+        # 메트릭 저장 (ChatLog commit 이후 별도 트랜잭션)
+        if result.metrics:
+            self._save_metrics(db, result.metrics, log.id, session_id)
+
         return {
             "answer": result.answer,
             "intent": result.intent,
             "escalated": result.escalated,
             "trace": result.trace,
         }
+
+    def _save_metrics(
+        self,
+        db: Session,
+        metrics: "list[ToolMetricData]",
+        chat_log_id: int | None,
+        session_id: int | None,
+    ) -> None:
+        """도구 메트릭을 DB에 저장. 실패해도 응답에 영향 없음."""
+        try:
+            from app.models.tool_metric import ToolMetric
+
+            db.add_all([
+                ToolMetric(
+                    chat_log_id=chat_log_id,
+                    session_id=session_id,
+                    tool_name=m.tool_name,
+                    intent=m.intent,
+                    success=m.success,
+                    latency_ms=m.latency_ms,
+                    empty_result=m.empty_result,
+                    iteration=m.iteration,
+                )
+                for m in metrics
+            ])
+            db.commit()
+        except Exception as e:
+            logger.warning("도구 메트릭 저장 실패: %s", e)
+            db.rollback()
+
+    # 프론트엔드 role → LLM role 매핑 ("bot" → "assistant")
+    _ROLE_MAP: dict[str, str] = {
+        "user": "user",
+        "assistant": "assistant",
+        "bot": "assistant",  # 프론트엔드가 bot으로 전송
+    }
 
     def _build_history(self, history: list | None) -> list[dict]:
         """기존 history 형식 → LLM 메시지 형식 변환."""
@@ -80,10 +124,13 @@ class AgentChatbotService:
 
         messages = []
         for item in history[-HISTORY_WINDOW_SIZE:]:
-            # 기존 형식: {"role": "user"/"assistant", "content"/"text": str}
-            role = item.get("role", "user")
+            raw_role = item.get("role", "user")
+            role = self._ROLE_MAP.get(raw_role)
+            if not role:
+                logger.debug("알 수 없는 history role 무시: %s", raw_role)
+                continue
             content = item.get("content") or item.get("text", "")
-            if role in ("user", "assistant") and content:
+            if content:
                 messages.append({"role": role, "content": content})
 
         return messages

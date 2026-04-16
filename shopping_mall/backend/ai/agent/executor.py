@@ -2,6 +2,7 @@
 import json
 import logging
 import re
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
@@ -16,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 MAX_ITERATIONS = 10       # 하드코딩 폴백 (settings 미설정 시)
 MAX_ANSWER_LENGTH = 1000  # 최종 응답 최대 글자 수
+_WEEKDAY_KO = ["월", "화", "수", "목", "금", "토", "일"]
 
 
 # ── 요청 컨텍스트 ──────────────────────────────────────────────────────────────
@@ -63,6 +65,22 @@ POLICY_COLLECTIONS: dict[str, list[str]] = {
 }
 
 
+_TOOL_SOURCE: dict[str, str] = {
+    "search_faq": "rag",
+    "search_storage_guide": "rag",
+    "search_season_info": "rag",
+    "search_policy": "rag",
+    "search_farm_info": "rag",
+    "get_order_status": "db",
+    "search_products": "db",
+    "get_product_detail": "db",
+    "escalate_to_agent": "action",
+    "create_exchange_request": "action",
+    "confirm_pending_action": "action",
+    "cancel_pending_action": "action",
+}
+
+
 @dataclass
 class TraceStep:
     """도구 호출 한 단계의 추론 기록."""
@@ -70,6 +88,41 @@ class TraceStep:
     arguments: dict
     result: str        # 도구 실행 결과 (최대 500자)
     iteration: int     # 루프 몇 번째 반복
+    source: str = "rag"  # "rag" | "db" | "action" | "parametric"
+
+
+@dataclass
+class ToolMetricData:
+    """도구 호출 1건의 성능/품질 메트릭."""
+    tool_name: str
+    intent: str
+    success: bool
+    latency_ms: int
+    empty_result: bool
+    iteration: int
+
+
+# ── 빈 결과 판별 ──────────────────────────────────────────────────────────────
+# 단순 부분 문자열("없습니다" 등)은 정상 응답에서도 오탐이 발생하므로,
+# 빈 결과를 명확히 나타내는 완전한 구(句) 단위의 정규식만 사용한다.
+
+_EMPTY_RESULT_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"찾을\s*수\s*없습니다"),        # "~을 찾을 수 없습니다"
+    re.compile(r"결과가\s*없습니다"),            # "검색 결과가 없습니다"
+    re.compile(r"조회된\s*주문이\s*없습니다"),   # "조회된 주문이 없습니다"
+    re.compile(r"정보를\s*찾을\s*수\s*없습니다"), # "정보를 찾을 수 없습니다"
+    re.compile(r"검색\s*결과가\s*없습니다"),     # "검색 결과가 없습니다"
+)
+
+
+def _is_empty_result(result: str) -> bool:
+    """도구 결과가 사실상 '빈 결과'인지 판별.
+
+    공백·줄바꿈을 정규화한 뒤 완전한 구 단위 정규식으로만 매칭하여
+    정상 응답에 포함된 "없습니다"로 인한 오탐을 방지한다.
+    """
+    normalized = re.sub(r"\s+", " ", result).strip()
+    return any(p.search(normalized) for p in _EMPTY_RESULT_PATTERNS)
 
 
 @dataclass
@@ -79,6 +132,7 @@ class AgentResult:
     escalated: bool
     tools_used: list[str] = field(default_factory=list)
     trace: list[TraceStep] = field(default_factory=list)
+    metrics: list[ToolMetricData] = field(default_factory=list)
 
 
 # ── 응답 후처리 ────────────────────────────────────────────────────────────────
@@ -119,7 +173,7 @@ def _log_trace(trace: "list[TraceStep]", question: str) -> None:
         return
     logger.info(f"[trace] 질문='{question[:60]}' → {len(trace)}단계 도구 호출")
     for step in trace:
-        logger.info(f"  [{step.iteration}] {step.tool}({step.arguments})")
+        logger.info(f"  [{step.iteration}] {step.tool}({step.arguments}) [{step.source}]")
 
 
 class AgentExecutor:
@@ -189,6 +243,7 @@ class AgentExecutor:
         messages = list(history) + [{"role": "user", "content": user_message}]
         tools_used: list[str] = []
         trace: list[TraceStep] = []
+        metrics: list[ToolMetricData] = []
         escalated = False
 
         for iteration in range(self.max_iterations):
@@ -199,6 +254,22 @@ class AgentExecutor:
                 raw_answer = response.text or "죄송합니다. 답변을 생성하지 못했습니다."
                 answer = _parse_answer(raw_answer)
                 intent = TOOL_TO_INTENT.get(tools_used[0], "other") if tools_used else "other"
+
+                # RAG 도구 결과가 없거나 도구 자체를 쓰지 않은 경우 → LLM 자체 지식 사용
+                # 에스컬레이션은 상담원에게 넘기는 것이므로 parametric 보완과 무관
+                has_empty_rag = any(
+                    _is_empty_result(s.result) and s.source == "rag"
+                    for s in trace
+                )
+                if not escalated and (not trace or has_empty_rag):
+                    trace.append(TraceStep(
+                        tool="_parametric_fallback",
+                        arguments={},
+                        result="RAG 결과 없음 — LLM 사전 지식으로 보완",
+                        iteration=iteration + 1,
+                        source="parametric",
+                    ))
+
                 _log_trace(trace, user_message)
                 return AgentResult(
                     answer=answer,
@@ -206,23 +277,49 @@ class AgentExecutor:
                     escalated=escalated,
                     tools_used=tools_used,
                     trace=trace,
+                    metrics=metrics,
                 )
 
-            # 도구 실행
-            results: list[tuple[ToolCall, str]] = []
+            # 실행 전 메타데이터 수집 (순서 보장)
             for tc in response.tool_calls:
                 tools_used.append(tc.name)
                 if tc.name == "escalate_to_agent":
                     escalated = True
-                result = await self._dispatch_tool(tc, db, user_id, session_id)
+
+            # 도구 실행 — 동일 Session을 공유하므로 항상 순차 실행
+            timed_results: list[tuple[ToolCall, str, int]] = []
+            for tc in response.tool_calls:
+                timed_results.append(
+                    await self._timed_dispatch(tc, db, user_id, session_id)
+                )
+
+            # trace + metrics 기록 (원래 순서)
+            results: list[tuple[ToolCall, str]] = []
+            for tc, result, latency_ms in timed_results:
+                success = not result.startswith("[오류]") and "오류가 발생했습니다" not in result
+                empty = _is_empty_result(result)
+                intent_for_metric = TOOL_TO_INTENT.get(tc.name, "other")
+
                 results.append((tc, result))
                 trace.append(TraceStep(
                     tool=tc.name,
                     arguments=tc.arguments,
                     result=result[:500],
                     iteration=iteration + 1,
+                    source=_TOOL_SOURCE.get(tc.name, "rag"),
                 ))
-                logger.info(f"[trace] iter={iteration+1} tool={tc.name} args={tc.arguments} → {result[:120]}")
+                metrics.append(ToolMetricData(
+                    tool_name=tc.name,
+                    intent=intent_for_metric,
+                    success=success,
+                    latency_ms=latency_ms,
+                    empty_result=empty,
+                    iteration=iteration + 1,
+                ))
+                logger.info(
+                    f"[trace] iter={iteration+1} tool={tc.name} "
+                    f"args={tc.arguments} latency={latency_ms}ms → {result[:120]}"
+                )
 
             client.add_tool_results(messages, response, results)
 
@@ -235,9 +332,19 @@ class AgentExecutor:
             escalated=True,
             tools_used=tools_used,
             trace=trace,
+            metrics=metrics,
         )
 
     # ── 도구 디스패치 ─────────────────────────────────────────────────────
+
+    async def _timed_dispatch(
+        self, tc: ToolCall, db: Session, user_id: int | None, session_id: int | None = None
+    ) -> tuple[ToolCall, str, int]:
+        """도구 실행 + 소요 시간 측정."""
+        t0 = time.monotonic()
+        result = await self._dispatch_tool(tc, db, user_id, session_id)
+        latency_ms = int((time.monotonic() - t0) * 1000)
+        return (tc, result, latency_ms)
 
     async def _dispatch_tool(
         self, tc: ToolCall, db: Session, user_id: int | None, session_id: int | None = None
@@ -306,7 +413,10 @@ class AgentExecutor:
 
     async def _tool_search_policy(self, query: str, policy_type: str = "all") -> str:
         collections = POLICY_COLLECTIONS.get(policy_type, POLICY_COLLECTIONS["all"])
-        docs = self.rag.retrieve_multiple(query, collections, top_k_per=2, distance_threshold=0.50)
+        # ko-sroberta-multitask 모델 실측: 정책 문서의 관련 청크 거리가 0.51~0.62 대에 형성됨
+        # → 기본 0.50은 모든 결과를 차단하므로 0.65로 상향 조정
+        # top_k_per=3: 단일 컬렉션 조회 시 주요 조항을 충분히 포함
+        docs = self.rag.retrieve_multiple(query, collections, top_k_per=3, distance_threshold=0.65)
         if not docs:
             return "관련 정책 정보를 찾을 수 없습니다."
         return "\n\n".join(docs)
@@ -381,7 +491,7 @@ class AgentExecutor:
             adjusted, skipped = await next_business_day(arrival_date, api_key)
 
             if not skipped:
-                return f"\n도착예정: {adjusted.strftime('%Y-%m-%d')} ({adjusted.strftime('%A')})"
+                return f"\n도착예정: {adjusted.strftime('%Y-%m-%d')} ({_WEEKDAY_KO[adjusted.weekday()]}요일)"
 
             skip_summary = ", ".join(skipped)
             return (

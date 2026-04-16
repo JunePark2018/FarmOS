@@ -27,6 +27,7 @@ class TraceStepSchema(BaseModel):
     arguments: dict
     result: str
     iteration: int
+    source: str = "rag"  # "rag" | "db" | "action" | "parametric"
 
 
 class ChatAnswer(BaseModel):
@@ -55,3 +56,23 @@ class ChatRating(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
     rating: int = Field(..., ge=1, le=5)
+
+
+# ── 도구 분석 스키마 ─────────────────────────────────────────────────────────
+
+class ToolAnalyticsItem(BaseModel):
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    tool_name: str
+    call_count: int = Field(..., ge=0)
+    success_rate: float = Field(..., ge=0.0, le=1.0, description="0.0 ~ 1.0")
+    avg_latency_ms: float = Field(..., ge=0)
+    empty_result_rate: float = Field(..., ge=0.0, le=1.0, description="0.0 ~ 1.0")
+
+
+class ToolAnalyticsResponse(BaseModel):
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    period: str
+    tools: List[ToolAnalyticsItem]
+    total_calls: int = Field(..., ge=0)
