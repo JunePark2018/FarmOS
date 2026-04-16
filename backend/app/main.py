@@ -70,14 +70,8 @@ async def seed_users():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    import asyncio
-    from app.core.pesticide_sync import init_pesticide_cache
-
     await init_db()
     await seed_users()
-    
-    # 서버 구동을 지연시키지 않고 백그라운드 태스크로 농약 데이터 동기화 실행
-    asyncio.create_task(init_pesticide_cache())
     
     yield
     await close_db()
