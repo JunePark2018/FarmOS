@@ -490,6 +490,36 @@ export interface AIDecision {
   priority: string;
   source: "rule" | "llm" | "manual" | "tool";
   tool_calls?: ToolCallTrace[];
+  // Design Ref §3.1 — agent-action-history 확장 (Bridge 적재 시 채워짐)
+  sensor_snapshot?: {
+    temperature?: number;
+    humidity?: number;
+    light_intensity?: number;
+    soil_moisture?: number;
+    timestamp?: string;
+    [k: string]: unknown;
+  };
+  duration_ms?: number;
+  created_at?: string;
+}
+
+// Design Ref §3.1, §4.1 — 요약 응답
+export interface ActivitySummary {
+  range: "today" | "7d" | "30d";
+  total: number;
+  by_control_type: Record<string, number>;
+  by_source: Record<string, number>;
+  by_priority: Record<string, number>;
+  avg_duration_ms: number | null;
+  latest_at: string | null;
+  generated_at: string;
+}
+
+// Design Ref §4.2 — 목록 + cursor pagination 응답
+export interface DecisionListResponse {
+  items: AIDecision[];
+  next_cursor: string | null;
+  has_more: boolean;
 }
 
 export interface CropProfile {

@@ -75,6 +75,13 @@ class Settings(BaseSettings):
     AI_AGENT_LLM_INTERVAL: int = 300  # LLM 호출 최소 간격 (초)
     AI_AGENT_RULE_INTERVAL: int = 30  # 규칙 판단 간격 (초)
 
+    # AI Agent Action History Bridge (Relay → FarmOS 미러)
+    IOT_RELAY_BASE_URL: str = "http://localhost:9000"
+    IOT_RELAY_API_KEY: str = "farmos-iot-default-key"
+    AI_AGENT_BRIDGE_ENABLED: bool = False  # Relay 패치 적용 전 기본 off
+    AI_AGENT_MIRROR_TTL_DAYS: int = 30
+    AI_AGENT_BACKFILL_PAGE_SIZE: int = 200
+
     # 농장 위치 (기상청 격자좌표)
     FARM_NX: int = 84   # 경북 상주 기준
     FARM_NY: int = 106
