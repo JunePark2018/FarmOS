@@ -4,6 +4,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { DayPicker, type DateRange } from 'react-day-picker';
 import 'react-day-picker/style.css';
+import { ko } from 'date-fns/locale';
 import { MdCalendarMonth, MdClose } from 'react-icons/md';
 
 export type RangePreset = 'all' | 'today' | '7d' | '30d' | 'custom';
@@ -179,28 +180,7 @@ export default function DateRangeFilter({ value, onChange, className }: Props) {
             mode="range"
             selected={draft}
             onSelect={setDraft}
-            locale={{
-              code: 'ko',
-              formatDistance: () => '',
-              formatRelative: () => '',
-              localize: {
-                ordinalNumber: (n) => `${n}`,
-                era: () => '',
-                quarter: () => '',
-                month: (n: number) =>
-                  ['1월', '2월', '3월', '4월', '5월', '6월', '7월', '8월', '9월', '10월', '11월', '12월'][n],
-                day: (n: number) =>
-                  ['일', '월', '화', '수', '목', '금', '토'][n],
-                dayPeriod: () => '',
-              },
-              formatLong: {
-                date: () => 'yyyy-MM-dd',
-                time: () => 'HH:mm',
-                dateTime: () => 'yyyy-MM-dd HH:mm',
-              },
-              match: {},
-              options: { weekStartsOn: 0 },
-            }}
+            locale={ko}
             weekStartsOn={0}
             classNames={{
               root: 'text-sm',

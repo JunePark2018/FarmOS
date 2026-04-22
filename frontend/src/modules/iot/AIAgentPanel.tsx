@@ -398,7 +398,7 @@ export default function AIAgentPanel() {
                     <button
                       data-testid="ai-more-btn"
                       onClick={() => fetchMore()}
-                      disabled={listLoading}
+                      disabled={listLoading || loading}
                       className="inline-flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 disabled:text-gray-400"
                     >
                       <MdExpandMore className="text-base" />

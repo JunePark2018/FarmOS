@@ -70,22 +70,26 @@ export function useAIAgent() {
             setHasMore(false);
             setNextCursor(null);
           }
-        } catch {
-          // 무시
+        } catch (e) {
+          console.error('[useAIAgent] Relay fallback 실패', e);
         }
       }
-    } catch {
-      // 무시
+    } catch (e) {
+      console.error('[useAIAgent] fetchStatus 실패', e);
     } finally {
       setLoading(false);
     }
   }, [dateSince, dateUntil]);
 
   // 날짜 필터 변경 API — AIAgentPanel 에서 DateRangeFilter 로부터 호출.
+  // 필터가 바뀌면 기존 cursor/결과는 무효화 (stale cursor 로 다음 페이지 요청 시 gap/중복 방지).
   const setDateRange = useCallback(
     (since: Date | null, until: Date | null) => {
       setDateSince(since);
       setDateUntil(until);
+      setNextCursor(null);
+      setHasMore(false);
+      setDecisions([]);
     },
     [],
   );
@@ -104,8 +108,8 @@ export function useAIAgent() {
           setSummary(data);
           setSummaryRange(range);
         }
-      } catch {
-        // 무시
+      } catch (e) {
+        console.error('[useAIAgent] fetchSummary 실패', e);
       } finally {
         setSummaryLoading(false);
       }
@@ -141,8 +145,8 @@ export function useAIAgent() {
           setNextCursor(data.next_cursor ?? null);
           setHasMore(Boolean(data.has_more));
         }
-      } catch {
-        // 무시
+      } catch (e) {
+        console.error('[useAIAgent] fetchMore 실패', e);
       } finally {
         setListLoading(false);
       }
@@ -170,8 +174,8 @@ export function useAIAgent() {
       if (res.status === 404) {
         return null;
       }
-    } catch {
-      // 네트워크 실패 시 캐시로 대체
+    } catch (e) {
+      console.error('[useAIAgent] fetchDetail 실패 — 캐시로 대체', e);
     }
     return cached ?? null;
   }, [decisions]);
@@ -249,8 +253,8 @@ export function useAIAgent() {
       if (res.ok) {
         await fetchStatus();
       }
-    } catch {
-      // 무시
+    } catch (e) {
+      console.error('[useAIAgent] toggle 실패', e);
     }
   }, [fetchStatus]);
 
@@ -266,8 +270,8 @@ export function useAIAgent() {
         if (res.ok) {
           await fetchStatus();
         }
-      } catch {
-        // 무시
+      } catch (e) {
+        console.error('[useAIAgent] updateCropProfile 실패', e);
       }
     },
     [fetchStatus]
@@ -283,8 +287,8 @@ export function useAIAgent() {
           body: JSON.stringify({ control_type: controlType, values, reason }),
         });
         await fetchStatus();
-      } catch {
-        // 무시
+      } catch (e) {
+        console.error('[useAIAgent] override 실패', e);
       }
     },
     [fetchStatus]

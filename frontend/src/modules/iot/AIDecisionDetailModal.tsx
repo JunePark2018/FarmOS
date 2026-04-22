@@ -54,18 +54,22 @@ const TOOL_LABEL_MAP: Record<string, string> = {
   read_control_state: '제어 상태 조회',
 };
 
+// 모듈 로드 시 1회만 regex 컴파일 (렌더마다 재생성 방지).
+// 순서: 감싸진 케이스(백틱·쌍따옴표·홑따옴표) 먼저, 그 다음 bare 이름.
+const TOOL_PATTERNS: Array<[RegExp, string]> = Object.entries(TOOL_LABEL_MAP).flatMap(
+  ([tool, label]) => [
+    [new RegExp('`' + tool + '`', 'g'), label],
+    [new RegExp('"' + tool + '"', 'g'), label],
+    [new RegExp("'" + tool + "'", 'g'), label],
+    [new RegExp('\\b' + tool + '\\b', 'g'), label],
+  ],
+);
+
 function humanizeToolNames(text: string): string {
   if (!text) return text;
   let out = text;
-  for (const [tool, label] of Object.entries(TOOL_LABEL_MAP)) {
-    // `tool` 이름은 전체 일치로만 치환. 백틱/따옴표 감싸진 경우도 함께 제거.
-    const patterns = [
-      new RegExp('`' + tool + '`', 'g'),
-      new RegExp('"' + tool + '"', 'g'),
-      new RegExp("'" + tool + "'", 'g'),
-      new RegExp('\\b' + tool + '\\b', 'g'),
-    ];
-    for (const p of patterns) out = out.replace(p, label);
+  for (const [pattern, label] of TOOL_PATTERNS) {
+    out = out.replace(pattern, label);
   }
   return out;
 }

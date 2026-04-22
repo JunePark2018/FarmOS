@@ -135,7 +135,7 @@ async def get_activity_summary(
     dependencies=[Depends(get_current_user)],
 )
 async def list_decisions(
-    cursor: datetime | None = Query(default=None, description="created_at < cursor (ISO8601)"),
+    cursor: datetime | None = Query(default=None, description="timestamp < cursor (ISO8601)"),
     limit: int = Query(default=20, ge=1, le=100),
     control_type: str | None = Query(default=None, pattern="^(ventilation|irrigation|lighting|shading)$"),
     source: str | None = Query(default=None, pattern="^(rule|llm|tool|manual)$"),
@@ -144,10 +144,14 @@ async def list_decisions(
     until: datetime | None = Query(default=None, description="timestamp <= until"),
     db: AsyncSession = Depends(get_db),
 ) -> DecisionListOut:
-    """최신순 cursor pagination. limit+1 을 fetch 해 has_more 판정."""
+    """최신순 cursor pagination. limit+1 을 fetch 해 has_more 판정.
+
+    정렬·cursor·필터 모두 timestamp(이벤트 시각) 기준으로 통일하여
+    since/until 필터와 페이지 경계의 컬럼 불일치로 인한 경계 행 유실을 방지.
+    """
     conds = []
     if cursor is not None:
-        conds.append(AiAgentDecision.created_at < cursor)
+        conds.append(AiAgentDecision.timestamp < cursor)
     if control_type is not None:
         conds.append(AiAgentDecision.control_type == control_type)
     if source is not None:
@@ -162,13 +166,13 @@ async def list_decisions(
     stmt = select(AiAgentDecision)
     if conds:
         stmt = stmt.where(and_(*conds))
-    stmt = stmt.order_by(AiAgentDecision.created_at.desc()).limit(limit + 1)
+    stmt = stmt.order_by(AiAgentDecision.timestamp.desc()).limit(limit + 1)
 
     rows = (await db.execute(stmt)).scalars().all()
 
     has_more = len(rows) > limit
     items = rows[:limit]
-    next_cursor = items[-1].created_at if has_more and items else None
+    next_cursor = items[-1].timestamp if has_more and items else None
 
     return DecisionListOut(
         items=[AIDecisionOut.model_validate(r) for r in items],
