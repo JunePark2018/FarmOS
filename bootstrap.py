@@ -12,6 +12,7 @@ import argparse
 import hashlib
 import os
 import queue
+import signal
 import shutil
 import subprocess
 import sys
@@ -450,37 +451,72 @@ def run(options: BootstrapOptions) -> None:
         input_controller = start_input_reader(command_queue)
         input_controller.prompt_request.set()
         input_closed = False
+        last_sigint_at = 0.0
+        consecutive_eof = 0
         while True:
-            has_failure, all_stopped = report_service_failures(services)
-            if has_failure:
-                info("하위 서비스 오류로 인해 종료 절차를 시작합니다.")
-                input_controller.stop_reader.set()
-                break
-            if all_stopped:
-                info("모든 하위 서비스가 종료되어 종료 절차를 시작합니다.")
-                input_controller.stop_reader.set()
-                break
             try:
-                user_input = command_queue.get(timeout=0.5)
-            except queue.Empty:
-                continue
-            if user_input is None:
+                has_failure, all_stopped = report_service_failures(services)
+                if has_failure:
+                    info("하위 서비스 오류로 인해 종료 절차를 시작합니다.")
+                    input_controller.stop_reader.set()
+                    break
+                if all_stopped:
+                    info("모든 하위 서비스가 종료되어 종료 절차를 시작합니다.")
+                    input_controller.stop_reader.set()
+                    break
+                try:
+                    user_input = command_queue.get(timeout=0.5)
+                except queue.Empty:
+                    continue
+                if user_input is None:
+                    consecutive_eof += 1
+                    recently_interrupted = time.monotonic() - last_sigint_at <= 2.5
+                    if not input_closed and recently_interrupted and consecutive_eof <= 3:
+                        input_controller.prompt_request.set()
+                        continue
+                    if not input_closed:
+                        info("표준 입력을 읽을 수 없어 입력 명령을 비활성화합니다.")
+                        info("종료하려면 Ctrl+C 를 누르세요.")
+                        input_closed = True
+                    input_controller.stop_reader.set()
+                    continue
+                consecutive_eof = 0
+                command = user_input.strip().lower()
+                if command in {"x", "q", "exit", "quit"}:
+                    input_controller.stop_reader.set()
+                    break
+                if command == "":
+                    print("종료하려면 x/q/exit 를 입력하세요.")
                 if not input_closed:
-                    info("표준 입력을 읽을 수 없어 입력 종료 기능을 비활성화합니다.")
-                    info("종료하려면 Ctrl+C 를 누르세요.")
-                    input_closed = True
-                input_controller.stop_reader.set()
-                continue
-            command = user_input.strip().lower()
-            if command in {"x", "q", "exit", "quit"}:
-                input_controller.stop_reader.set()
-                break
-            if command == "":
-                print("종료하려면 x/q/exit 를 입력하세요.")
-            if not input_closed:
-                input_controller.prompt_request.set()
+                    input_controller.prompt_request.set()
+            except KeyboardInterrupt:
+                now = time.monotonic()
+                if now - last_sigint_at <= 2.0:
+                    info("Ctrl+C 재입력 감지. 종료 절차를 시작합니다.")
+                    input_controller.stop_reader.set()
+                    break
+                last_sigint_at = now
+                info(
+                    "Ctrl+C(SIGINT) 감지. 종료하려면 2초 내 Ctrl+C를 한 번 더 누르거나 "
+                    "x/q/exit 를 입력하세요."
+                )
+                if not input_closed:
+                    input_controller.prompt_request.set()
     finally:
-        stop_services(services)
+        previous_sigint_handler = None
+        sigint_guard_enabled = False
+        try:
+            previous_sigint_handler = signal.getsignal(signal.SIGINT)
+            signal.signal(signal.SIGINT, signal.SIG_IGN)
+            sigint_guard_enabled = True
+        except (AttributeError, ValueError):
+            # 일부 런타임에서는 시그널 핸들러 교체가 불가할 수 있다.
+            sigint_guard_enabled = False
+        try:
+            stop_services(services)
+        finally:
+            if sigint_guard_enabled and previous_sigint_handler is not None:
+                signal.signal(signal.SIGINT, previous_sigint_handler)
         print("모든 서비스를 종료했습니다.")
 
 
