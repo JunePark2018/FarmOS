@@ -364,12 +364,15 @@ export default function DiagnosisChatPage() {
             </motion.div>
           ))}
           {isTyping && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex justify-start gap-3">
+            <motion.div initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} className="flex justify-start gap-3">
               <div className="w-8 h-8 rounded-full bg-primary text-white flex items-center justify-center"><MdSmartToy /></div>
-              <div className="bg-white p-3 rounded-2xl rounded-tl-none shadow-sm flex gap-1">
-                <span className="w-1.5 h-1.5 bg-gray-300 rounded-full animate-bounce" />
-                <span className="w-1.5 h-1.5 bg-gray-300 rounded-full animate-bounce [animation-delay:0.2s]" />
-                <span className="w-1.5 h-1.5 bg-gray-300 rounded-full animate-bounce [animation-delay:0.4s]" />
+              <div className="bg-white p-3 rounded-2xl rounded-tl-none shadow-sm flex flex-col gap-2 border border-gray-100">
+                <div className="flex gap-1">
+                  <span className="w-1.5 h-1.5 bg-primary/40 rounded-full animate-bounce" />
+                  <span className="w-1.5 h-1.5 bg-primary/40 rounded-full animate-bounce [animation-delay:0.2s]" />
+                  <span className="w-1.5 h-1.5 bg-primary/40 rounded-full animate-bounce [animation-delay:0.4s]" />
+                </div>
+                <p className="text-[11px] text-gray-400 font-medium leading-none">진단봇이 생각 중이에요. 잠시만 기다려 주세요...</p>
               </div>
             </motion.div>
           )}

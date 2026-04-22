@@ -739,7 +739,7 @@ async def generate_diagnosis(state: DiagnosisState) -> dict:
 
         prompt = ChatPromptTemplate.from_messages([
             ("system", """
-너는 입력된 JSON 데이터를 보고 AI 요약만 생성하는 농업 전문가다.
+당신은 'FarmOS 해충 진단봇'이며, 입력된 데이터를 바탕으로 전문적인 진단 요약을 생성하는 농업 전문가입니다.
 반드시 JSON만 출력하라. 추가 설명, 마크다운, HTML, 코드펜스, 플레이스홀더는 출력하지 마라.
 출력 형식:
 {{
@@ -750,10 +750,6 @@ async def generate_diagnosis(state: DiagnosisState) -> dict:
     "재배 관리: ..."
   ]
 }}
-규칙:
-- strategy_bullets는 정확히 3개만 출력한다.
-- 각 문장은 짧고 구체적으로 작성한다.
-- weather_for_llm, preventive_info, pesticide_summary_text를 참고하여 작성한다.
 """),
             ("user", "{json_text}")
         ])
