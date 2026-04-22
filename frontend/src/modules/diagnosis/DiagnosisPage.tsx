@@ -2,9 +2,11 @@
 import { useDropzone } from 'react-dropzone';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MdCameraAlt, MdHistory, MdCheckCircle, MdChat, MdInfoOutline, MdDeleteOutline, MdSearch } from 'react-icons/md';
+import toast from 'react-hot-toast';
 import { useAuth } from '@/context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import DaumPostcode from 'react-daum-postcode';
+import { formatDaumAddress, type DaumPostcodeData } from '@/utils/daumAddress';
 
 const REGIONS = [
   "서울", "인천", "대전", "대구", "광주", "부산", "울산", "세종",
@@ -65,21 +67,8 @@ export default function DiagnosisPage() {
   
   const [isPostcodeOpen, setIsPostcodeOpen] = useState(false);
   
-  const handleCompletePostcode = (data: any) => {
-    let fullAddress = data.address;
-    let extraAddress = '';
-
-    if (data.addressType === 'R') {
-      if (data.bname !== '') {
-        extraAddress += data.bname;
-      }
-      if (data.buildingName !== '') {
-        extraAddress += extraAddress !== '' ? `, ${data.buildingName}` : data.buildingName;
-      }
-      fullAddress += extraAddress !== '' ? ` (${extraAddress})` : '';
-    }
-
-    setSelectedRegion(fullAddress);
+  const handleCompletePostcode = (data: DaumPostcodeData) => {
+    setSelectedRegion(formatDaumAddress(data));
     setIsPostcodeOpen(false);
   };
   
@@ -93,7 +82,7 @@ export default function DiagnosisPage() {
   };
 
   useEffect(() => {
-    let interval: NodeJS.Timeout;
+    let interval: ReturnType<typeof setInterval> | undefined;
     if (isAnalyzing) {
       interval = setInterval(() => {
         setLoadingMessage(prev => {
@@ -184,7 +173,7 @@ export default function DiagnosisPage() {
 
   const startDiagnosis = async (isTest = false) => {
     if (!selectedRegion && !isTest) {
-      alert("정확한 기상청 데이터 연동을 위해 주소를 입력해주세요.");
+      toast.error('정확한 기상청 데이터 연동을 위해 주소를 입력해주세요.');
       setIsPostcodeOpen(true);
       return;
     }
@@ -199,8 +188,14 @@ export default function DiagnosisPage() {
     }
     abortControllerRef.current = new AbortController();
 
+    if (!isTest) {
+      toast('현재 이미지 자동 판독(VLM) 연동 전입니다. 선택된 해충으로 임시 진단합니다.', {
+        icon: '⚠️'
+      });
+    }
+
     const payload = {
-      pest: isTest ? testPest : "벼룩잎벌레",
+      pest: testPest,
       crop: selectedCrop || "배추",
       region: selectedRegion || "서울"
     };

@@ -16,6 +16,13 @@ cd /d "%PROJECT_ROOT%backend"
 
 :: Run the python reset script using uv
 uv run python "%PROJECT_ROOT%bootstrap\reset_db.py"
+if errorlevel 1 (
+	echo.
+	echo [ERROR] Database wipe failed or was aborted.
+	cd /d "%PROJECT_ROOT%"
+	pause
+	exit /b 1
+)
 
 cd /d "%PROJECT_ROOT%"
 echo.

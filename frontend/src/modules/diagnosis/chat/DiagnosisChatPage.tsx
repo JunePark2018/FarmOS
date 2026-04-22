@@ -116,7 +116,7 @@ function MarkdownRenderer({ content }: { content: string }) {
         while (nestedLevel > 0) { result.push('</ul></li>'); nestedLevel--; }
         if (inList) { result.push('</ul>'); inList = false; }
         const formatted = line.replace(/\*\*(.+?)\*\*/g, '<strong class="font-semibold">$1</strong>');
-        result.push(line);
+        result.push(formatted);
         continue;
       }
 

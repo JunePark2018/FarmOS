@@ -5,6 +5,7 @@ import { useAuth } from '@/context/AuthContext';
 import { CROP_OPTIONS, FARMLAND_TYPES, FARMER_TYPES, safeAreaConvert } from '@/constants/farming';
 import DaumPostcode from 'react-daum-postcode';
 import { MdSearch } from 'react-icons/md';
+import { formatDaumAddress, type DaumPostcodeData } from '@/utils/daumAddress';
 
 const API_BASE = 'http://localhost:8000/api/v1';
 
@@ -35,21 +36,8 @@ export default function ProfilePage() {
 
   const [isPostcodeOpen, setIsPostcodeOpen] = useState(false);
 
-  const handleCompletePostcode = (data: any) => {
-    let fullAddress = data.address;
-    let extraAddress = '';
-
-    if (data.addressType === 'R') {
-      if (data.bname !== '') {
-        extraAddress += data.bname;
-      }
-      if (data.buildingName !== '') {
-        extraAddress += extraAddress !== '' ? `, ${data.buildingName}` : data.buildingName;
-      }
-      fullAddress += extraAddress !== '' ? ` (${extraAddress})` : '';
-    }
-
-    setDraft(d => d ? { ...d, location: fullAddress } : d);
+  const handleCompletePostcode = (data: DaumPostcodeData) => {
+    setDraft(d => d ? { ...d, location: formatDaumAddress(data) } : d);
     setIsPostcodeOpen(false);
   };
 

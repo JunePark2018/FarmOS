@@ -15,7 +15,7 @@ if errorlevel 1 (
 
 uv run python ..\tools\ncpms-api-crawler\ncpms-crawler.py
 if errorlevel 1 (
-  echo [NCPMS Crawler]수집 중 에러가 발생했습니다.
+  echo [NCPMS Crawler] 수집 중 에러가 발생했습니다.
   pause
   exit /b 1
 )

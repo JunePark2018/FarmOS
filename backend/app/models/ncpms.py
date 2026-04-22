@@ -4,8 +4,8 @@ from app.core.database import Base
 class NcpmsDiagnosis(Base):
     __tablename__ = "ncpms_diagnoses"
 
-    id = Column(Integer, primary_key=True, index=True)
-    pest_name = Column(String(100), index=True, nullable=False)
+    id = Column(Integer, primary_key=True)
+    pest_name = Column(String(100), nullable=False)
     crop_name = Column(String(100), index=True, nullable=False)
     
     ecology_info = Column(Text, nullable=True)

@@ -1,6 +1,9 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.database import get_db
 from app.models.diagnosis import DiagnosisHistory, DiagnosisChatMessage
@@ -21,6 +24,7 @@ class CreateChatMessageRequest(BaseModel):
     content: str = Field(min_length=1, max_length=2000)
 
 router = APIRouter(prefix="/diagnosis", tags=["diagnosis"])
+logger = logging.getLogger(__name__)
 
 @router.get("/history")
 async def get_diagnosis_history(
@@ -108,8 +112,11 @@ async def create_diagnosis_history(
                 "created_at": new_history.created_at.isoformat()
             }
         }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"DB 저장 중 오류 발생: {str(e)}")
+    except HTTPException:
+        raise
+    except SQLAlchemyError as e:
+        logger.exception("Diagnosis history 저장 실패")
+        raise HTTPException(status_code=500, detail="DB 저장 중 오류가 발생했습니다.") from e
 
 @router.get("/history/{history_id}/chat")
 async def get_chat_messages(

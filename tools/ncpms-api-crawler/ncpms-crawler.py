@@ -2,9 +2,15 @@ import os
 import json
 import time
 import requests
-import xml.etree.ElementTree as ET
 from pathlib import Path
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from dotenv import load_dotenv
+
+try:
+    from defusedxml import ElementTree as ET
+except ImportError:
+    import xml.etree.ElementTree as ET
 
 # .env 환경변수 로딩 (백엔드 기준 폴더)
 env_path = Path(__file__).resolve().parent.parent.parent / "backend" / ".env"
@@ -12,6 +18,24 @@ load_dotenv(dotenv_path=env_path)
 
 API_KEY = os.environ.get("NCPMS_API_KEY", "")
 BASE_URL = "http://ncpms.rda.go.kr/npmsAPI/service"
+REQUEST_DELAY_SECONDS = 0.2
+
+
+def build_session() -> requests.Session:
+    session = requests.Session()
+    retry = Retry(
+        total=3,
+        backoff_factor=0.5,
+        status_forcelist=[429, 500, 502, 503, 504],
+        allowed_methods=["GET"],
+    )
+    adapter = HTTPAdapter(max_retries=retry)
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+    return session
+
+
+SESSION = build_session()
 
 # pest_crop_mapping.md 기반 매핑 딕셔너리
 PEST_CROP_MAPPINGS = {
@@ -43,16 +67,29 @@ SYNONYMS = {
 
 def remove_html_tags_from_api_text(raw_html):
     import re
+
     cleanr = re.compile('<.*?>')
     cleantext = re.sub(cleanr, '', raw_html)
     return cleantext.replace('&nbsp;', ' ').strip()
+
+
+def fetch_api_text(params: dict[str, str]) -> str:
+    response = SESSION.get(BASE_URL, params=params, timeout=10)
+    response.raise_for_status()
+    text = response.text.strip()
+    time.sleep(REQUEST_DELAY_SECONDS)
+    return text
+
 
 def fetch_details(insect_key):
     detail_params = {
         "apiKey": API_KEY, "serviceCode": "SVC07", "serviceType": "AA003", "insectKey": insect_key
     }
-    resp = requests.get(BASE_URL, params=detail_params, timeout=10)
-    text = resp.text.strip()
+    try:
+        text = fetch_api_text(detail_params)
+    except requests.RequestException as exc:
+        print(f"상세 API 요청 에러(insectKey={insect_key}): {exc}")
+        return {"preventMethod": "", "ecologyInfo": "", "biologyPrvnbeMth": "", "chemicalPrvnbeMth": ""}
 
     info = {"preventMethod": "", "ecologyInfo": "", "biologyPrvnbeMth": "", "chemicalPrvnbeMth": ""}
     
@@ -64,8 +101,8 @@ def fetch_details(insect_key):
             info["biologyPrvnbeMth"] = remove_html_tags_from_api_text(svc.get("biologyPrvnbeMth", ""))
             info["chemicalPrvnbeMth"] = remove_html_tags_from_api_text(svc.get("chemicalPrvnbeMth", ""))
             info["preventMethod"] = remove_html_tags_from_api_text(svc.get("preventMethod", ""))
-        except:
-            pass
+        except json.JSONDecodeError as exc:
+            print(f"상세 JSON 파싱 실패(insectKey={insect_key}): {exc}")
     return info
 
 def main():
@@ -81,17 +118,23 @@ def main():
         }
         
         try:
-            resp = requests.get(BASE_URL, params=search_params, timeout=10)
-            text = resp.text.strip()
-        except Exception as e:
-            print(f"API 요청 에러: {e}")
+            text = fetch_api_text(search_params)
+        except requests.RequestException as exc:
+            print(f"API 요청 에러: {exc}")
             continue
             
         items = []
         if text.startswith("{"):
-            data = json.loads(text)
-            items = data.get("service", {}).get("list", [])
-            if isinstance(items, dict): items = [items]
+            try:
+                data = json.loads(text)
+                items = data.get("service", {}).get("list", [])
+                if isinstance(items, dict):
+                    items = [items]
+                elif not isinstance(items, list):
+                    items = []
+            except json.JSONDecodeError as exc:
+                print(f"검색 JSON 파싱 실패({official_pest}): {exc}")
+                continue
         else:
             try:
                 root = ET.fromstring(text)
@@ -102,8 +145,9 @@ def main():
                         "insectKey": item.findtext("insectKey", "")
                     }
                     items.append(d)
-            except:
-                pass
+            except ET.ParseError as exc:
+                print(f"검색 XML 파싱 실패({official_pest}): {exc}")
+                continue
                 
         # API에서 가져온 항목이 없을 경우
         if not items:

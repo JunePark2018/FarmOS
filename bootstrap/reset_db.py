@@ -2,6 +2,7 @@ import asyncio
 import os
 import sys
 from pathlib import Path
+from urllib.parse import urlparse
 from dotenv import load_dotenv
 
 backend_dir = Path(__file__).resolve().parent.parent / "backend"
@@ -11,13 +12,34 @@ load_dotenv(dotenv_path=backend_dir / ".env")
 from app.core.database import engine
 from sqlalchemy import text
 
-async def drop_all():
+def _is_local_database(db_url: str) -> bool:
+    parsed = urlparse(db_url)
+    host = (parsed.hostname or "").lower()
+    return host in {"localhost", "127.0.0.1"}
+
+
+def _confirm_reset() -> None:
+    db_url = os.getenv("DATABASE_URL", "")
+    parsed = urlparse(db_url)
+    db_name = (parsed.path or "").lstrip("/") or "unknown"
+
     print("WARNING: This will delete ALL data in the database.")
+    print(f"Target DB: {db_name}")
+
+    if not _is_local_database(db_url):
+        print("WARNING: DATABASE_URL host is not localhost/127.0.0.1")
+        check_name = input(f"Type target database name '{db_name}' to continue: ")
+        if check_name != db_name:
+            print("Aborted.")
+            raise SystemExit(1)
+
     confirm = input("Are you sure? Type 'YES' to continue: ")
     if confirm != "YES":
         print("Aborted.")
-        sys.exit(0)
+        raise SystemExit(1)
 
+
+async def drop_all():
     try:
         async with engine.begin() as conn:
             print("Dropping public schema cascade...")
@@ -31,8 +53,13 @@ async def drop_all():
         print("You can now run 'bootstrap.cmd' to recreate tables and reseed data.")
     except Exception as e:
         print(f"Error dropping database: {e}")
+        raise
     finally:
         await engine.dispose()
 
 if __name__ == "__main__":
-    asyncio.run(drop_all())
+    _confirm_reset()
+    try:
+        asyncio.run(drop_all())
+    except Exception:
+        raise SystemExit(1)
