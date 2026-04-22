@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import Optional
 from datetime import datetime
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, PositiveInt
 
 
 def to_camel(s: str) -> str:
@@ -16,6 +16,7 @@ class ShipmentCreate(BaseModel):
     carrier: str
     tracking_number: str
     expected_arrival: Optional[datetime] = None
+    related_ticket_id: Optional[PositiveInt] = None
 
 
 class ShipmentResponse(BaseModel):

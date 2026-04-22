@@ -1,4 +1,6 @@
 """애플리케이션 설정 — 환경변수를 한 곳에서 관리합니다."""
+import re
+
 from pydantic_settings import BaseSettings
 
 from app.paths import BACKEND_ROOT
@@ -43,6 +45,9 @@ class Settings(BaseSettings):
 
     # ── 에이전트 ────────────────────────────────────────────────────────────
     agent_max_iterations: int = 10
+    # true → SupervisorExecutor (멀티 에이전트 + LangGraph OrderGraph)
+    # false → 기존 단일 AgentExecutor
+    use_multi_agent: bool = False
 
     # ── 외부 API ────────────────────────────────────────────────────────────
     anniversary_api_key: str = ""
@@ -51,6 +56,23 @@ class Settings(BaseSettings):
     # 정책 문서(PDF/DOCX) 폴더. 기본값: shopping_mall/backend/ai/docs/
     # 다른 위치를 쓰려면 .env에 POLICY_DOCS_DIR=/절대/경로 로 지정.
     policy_docs_dir: str = str(BACKEND_ROOT / "ai" / "docs")
+
+    @property
+    def langgraph_postgres_url(self) -> str:
+        """AsyncPostgresSaver(psycopg3)용 URL — SQLAlchemy 드라이버 접미사 제거.
+
+        예: postgresql+asyncpg://... → postgresql://...
+        PostgreSQL URL이 아닌 경우 ValueError를 발생시킵니다.
+        """
+        url = self.database_url
+        if not re.match(r"^postgres(?:ql)?(?:\+\w+)?://", url):
+            scheme_match = re.match(r"^([^:/]+)", url)
+            detected = scheme_match.group(1) if scheme_match else "(unknown)"
+            raise ValueError(
+                f"DATABASE_URL이 PostgreSQL URL이 아닙니다 (감지된 스킴: {detected!r}). "
+                "AsyncPostgresSaver는 PostgreSQL 전용입니다."
+            )
+        return re.sub(r"^(postgres(?:ql)?)\+\w+://", r"\1://", url)
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 

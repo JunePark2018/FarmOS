@@ -1,7 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
 import { useSessionMessages, useSendMessage, useCloseSession, useGetSession } from './useChatSession.ts';
 import { INTENT_LABEL } from '@/admin/constants/chatbot';
-import type { ChatSessionMessage } from './types.ts';
+import { renderChatText } from './ChatTextRenderer';
+import {
+  parseOrderFlowMessage,
+  type OrderFlowUI,
+} from './parseOrderFlowMessage';
 
 const QUICK_ACTIONS = [
   { label: '📦 배송 조회', intent: 'delivery', text: '배송 현황을 알고 싶어요' },
@@ -16,6 +20,153 @@ const WELCOME = {
   text: '안녕하세요! FarmOS 마켓 고객지원입니다.\n무엇이든 물어보세요 😊',
 };
 
+// ── 인터랙티브 액션 컴포넌트 ──────────────────────────────────────────────────
+
+function OrderFlowActions({
+  text,
+  onSend,
+  disabled,
+}: {
+  text: string;
+  onSend: (value: string) => void;
+  disabled: boolean;
+}) {
+  const [otherInput, setOtherInput] = useState('');
+  const [showOtherInput, setShowOtherInput] = useState(false);
+
+  let parsed: OrderFlowUI = null;
+  try {
+    parsed = parseOrderFlowMessage(text);
+  } catch {
+    return null;
+  }
+  if (!parsed) return null;
+
+  const base = 'transition-colors disabled:opacity-40 text-sm font-medium';
+  const primary = `${base} px-4 py-1.5 bg-[#03C75A] text-white rounded-full hover:bg-[#02b050]`;
+  const outline = `${base} px-4 py-1.5 border border-gray-300 text-gray-700 rounded-full hover:border-[#03C75A] hover:text-[#03C75A]`;
+  const chip = `${base} px-3 py-1.5 border border-[#03C75A]/50 text-[#03C75A] rounded-full hover:bg-[#03C75A]/10`;
+  const chipGray = `${base} px-3 py-1.5 border border-gray-300 text-gray-600 rounded-full hover:border-[#03C75A] hover:text-[#03C75A]`;
+  const card = `${base} w-full text-left px-3 py-2.5 border border-[#03C75A]/30 rounded-xl hover:bg-[#03C75A]/8 text-gray-700`;
+
+  // 네 / 아니오
+  if (parsed.type === 'confirm') {
+    return (
+      <div className="flex gap-2 mt-2">
+        <button onClick={() => onSend('네')} disabled={disabled} className={primary}>
+          네
+        </button>
+        <button onClick={() => onSend('아니오')} disabled={disabled} className={outline}>
+          아니오
+        </button>
+      </div>
+    );
+  }
+
+  // 주문 카드 선택
+  if (parsed.type === 'order-select') {
+    return (
+      <div className="flex flex-col gap-1.5 mt-2">
+        {parsed.items.map((item) => (
+          <button
+            key={item.num}
+            onClick={() => onSend(item.num)}
+            disabled={disabled}
+            className={card}
+          >
+            <span className="font-semibold text-[#03C75A]">{item.orderId}</span>
+            {item.summary && (
+              <span className="text-gray-600"> · {item.summary}</span>
+            )}
+            {item.date && (
+              <span className="text-gray-400 text-xs"> ({item.date})</span>
+            )}
+          </button>
+        ))}
+      </div>
+    );
+  }
+
+  // 사유 / 방법 선택 (기타 → 입력창)
+  if (parsed.type === 'simple-options') {
+    return (
+      <div className="mt-2">
+        <div className="flex flex-wrap gap-1.5">
+          {parsed.items.map((item) =>
+            item.isOther ? (
+              <button
+                key={item.num}
+                onClick={() => setShowOtherInput(true)}
+                disabled={disabled || showOtherInput}
+                className={chipGray}
+              >
+                {item.label}
+              </button>
+            ) : (
+              <button
+                key={item.num}
+                onClick={() => onSend(item.num)}
+                disabled={disabled}
+                className={chip}
+              >
+                {item.label}
+              </button>
+            )
+          )}
+        </div>
+        {showOtherInput && (
+          <div className="flex gap-2 mt-2">
+            <input
+              type="text"
+              value={otherInput}
+              onChange={(e) => setOtherInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && otherInput.trim()) onSend(otherInput.trim());
+              }}
+              placeholder="기타 사유를 입력하세요..."
+              autoFocus
+              className="flex-1 text-sm border border-gray-200 rounded-full px-3 py-1.5 outline-none focus:border-[#03C75A]"
+            />
+            <button
+              onClick={() => { if (otherInput.trim()) onSend(otherInput.trim()); }}
+              disabled={!otherInput.trim() || disabled}
+              className="px-3 py-1.5 bg-[#03C75A] text-white text-sm rounded-full disabled:opacity-40"
+            >
+              전송
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // 교환 품목 선택 (전체 선택 버튼 + 직접 입력 안내)
+  if (parsed.type === 'item-select') {
+    return (
+      <div className="flex flex-col gap-1.5 mt-2">
+        {parsed.items.map((item) => (
+          <button
+            key={item.num}
+            onClick={() => onSend(`${item.num}번 상품 전체`)}
+            disabled={disabled}
+            className={card}
+          >
+            {item.label}
+            <span className="ml-2 text-[#03C75A] text-xs font-semibold">전체 선택</span>
+          </button>
+        ))}
+        <p className="text-xs text-gray-400 mt-0.5 px-0.5">
+          일부 수량만 교환하려면 직접 입력하세요
+        </p>
+      </div>
+    );
+  }
+
+  return null;
+}
+
+// ── 메인 컴포넌트 ─────────────────────────────────────────────────────────────
+
 interface ChatMessageViewProps {
   sessionId: number;
   userId: number | null;
@@ -28,7 +179,7 @@ export default function ChatMessageView({ sessionId, userId, onBackClick }: Chat
   const { mutate: send, isPending } = useSendMessage();
   const { mutate: closeSession, isPending: isClosing } = useCloseSession();
   const [input, setInput] = useState('');
-  const [messages, setMessages] = useState<Array<{ role: 'user' | 'bot'; text: string; intent?: string; escalated?: boolean }>>([WELCOME]);
+  const [messages, setMessages] = useState<Array<{ role: 'user' | 'bot'; text: string; intent?: string; escalated?: boolean; createdAt?: string }>>([WELCOME]);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -38,35 +189,26 @@ export default function ChatMessageView({ sessionId, userId, onBackClick }: Chat
     closeSession(
       { sessionId, userId },
       {
-        onSuccess: (closedSession) => {
-          // 세션 종료 성공 후 목록으로 돌아가기
-          setTimeout(() => {
-            onBackClick();
-          }, 0);
+        onSuccess: () => {
+          setTimeout(() => { onBackClick(); }, 0);
         },
-        onError: (error) => {
-          console.error('Failed to close session:', error);
-          // 에러 발생 시에도 백으로 돌아가기 (나중에 목록에서 상태 확인)
+        onError: () => {
           onBackClick();
         },
       }
     );
   };
 
-  // Initialize messages from session (빈 경우 WELCOME 포함)
-  // React Query 캐시에서 optimistic update를 하므로 sessionMessages를 그대로 사용
   useEffect(() => {
     setMessages(sessionMessages.length === 0 ? [WELCOME] : sessionMessages);
   }, [sessionMessages]);
 
-  // Scroll to bottom on new messages
   useEffect(() => {
     if (messagesContainerRef.current) {
       messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
     }
   }, [messages, isPending]);
 
-  // Focus input when view opens
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
@@ -74,7 +216,6 @@ export default function ChatMessageView({ sessionId, userId, onBackClick }: Chat
   const handleSend = (question: string, intent?: string) => {
     if (!question.trim() || isPending) return;
 
-    // Add user message optimistically
     setMessages((prev) => [...prev, { role: 'user', text: question }]);
     setInput('');
 
@@ -83,15 +224,17 @@ export default function ChatMessageView({ sessionId, userId, onBackClick }: Chat
         question,
         userId,
         sessionId,
-        history: messages.slice(-4).map(({ role, text }) => ({ role, text })),
+        history: messages.slice(-4).map(({ role, text, escalated }) => ({ role, text, escalated })),
         intent,
       },
       {
-        onSuccess: (data) => {
-          setMessages((prev) => [
-            ...prev,
-            { role: 'bot', text: data.answer, intent: data.intent, escalated: data.escalated },
-          ]);
+        onSuccess: () => {
+          // useSendMessage.onSuccess has already written the bot response to
+          // the query cache via setQueryData. The useEffect watching
+          // sessionMessages propagates it to local state — no direct
+          // setMessages call needed. Removing the optimistic add eliminates
+          // the text-equality dedup that incorrectly suppressed legitimate
+          // consecutive responses with identical text.
         },
         onError: () => {
           setMessages((prev) => [
@@ -107,6 +250,8 @@ export default function ChatMessageView({ sessionId, userId, onBackClick }: Chat
     e.preventDefault();
     handleSend(input);
   };
+
+  const lastIdx = messages.length - 1;
 
   return (
     <div className="flex flex-col h-full relative">
@@ -141,36 +286,51 @@ export default function ChatMessageView({ sessionId, userId, onBackClick }: Chat
       </div>
 
       {/* Messages */}
-      <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-gray-200 [&::-webkit-scrollbar-thumb]:rounded-full">
+      <div
+        ref={messagesContainerRef}
+        className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-gray-200 [&::-webkit-scrollbar-thumb]:rounded-full"
+      >
         {messages.map((msg, idx) => {
-          // Generate stable key from timestamp or fallback to role+index combination
           const key = msg.createdAt ? `${msg.role}-${msg.createdAt}` : `${msg.role}-${idx}`;
+          // 마지막 봇 메시지에만 인터랙티브 버튼 표시
+          const showActions = msg.role === 'bot' && idx === lastIdx && !isClosed;
+
           return (
-          <div key={key} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-            <div className={`${msg.role === 'user' ? 'max-w-[78%]' : 'max-w-[80%]'} ${msg.role === 'bot' ? 'space-y-1' : ''}`}>
-              <div
-                className={`px-4 py-3 rounded-2xl text-sm whitespace-pre-wrap ${
-                  msg.role === 'user'
-                    ? 'leading-relaxed bg-[#03C75A] text-white rounded-br-sm'
-                    : 'leading-[1.7] bg-gray-50 text-gray-800 rounded-bl-sm border border-[#03C75A]/30'
-                }`}
-              >
-                {msg.text}
-              </div>
-              {msg.role === 'bot' && msg.intent && (
-                <div className="flex items-center gap-1.5 px-1">
-                  <span className="text-xs text-gray-400">
-                    [{INTENT_LABEL[msg.intent] ?? msg.intent}]
-                  </span>
-                  {msg.escalated && (
-                    <span className="text-xs text-red-500 font-medium">상담원 연결 필요</span>
-                  )}
+            <div key={key} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+              <div className={`${msg.role === 'user' ? 'max-w-[78%]' : 'max-w-[85%]'} ${msg.role === 'bot' ? 'space-y-1' : ''}`}>
+                <div
+                  className={`px-4 py-3 rounded-2xl text-sm whitespace-pre-wrap ${
+                    msg.role === 'user'
+                      ? 'leading-relaxed bg-[#03C75A] text-white rounded-br-sm'
+                      : 'leading-[1.7] bg-gray-50 text-gray-800 rounded-bl-sm border border-[#03C75A]/30'
+                  }`}
+                >
+                  {msg.role === 'bot' ? renderChatText(msg.text) : msg.text}
                 </div>
-              )}
+
+                {msg.role === 'bot' && msg.intent && (
+                  <div className="flex items-center gap-1.5 px-1">
+                    <span className="text-xs text-gray-400">
+                      [{INTENT_LABEL[msg.intent] ?? msg.intent}]
+                    </span>
+                    {msg.escalated && (
+                      <span className="text-xs text-red-500 font-medium">상담원 연결 필요</span>
+                    )}
+                  </div>
+                )}
+
+                {showActions && (
+                  <OrderFlowActions
+                    text={msg.text}
+                    onSend={handleSend}
+                    disabled={isPending}
+                  />
+                )}
+              </div>
             </div>
-          </div>
           );
         })}
+
         {isPending && (
           <div className="flex justify-start">
             <div className="bg-gray-100 px-4 py-2.5 rounded-2xl rounded-bl-sm">
@@ -190,7 +350,10 @@ export default function ChatMessageView({ sessionId, userId, onBackClick }: Chat
 
       {/* Quick Actions */}
       {!isClosed && (
-        <div className="px-3 py-2 border-t border-gray-100 flex gap-1.5 overflow-x-auto shrink-0 bg-white" style={{ scrollbarWidth: 'thin', scrollbarColor: '#d1d5db #f3f4f6' }}>
+        <div
+          className="px-3 py-2 border-t border-gray-100 flex gap-1.5 overflow-x-auto shrink-0 bg-white"
+          style={{ scrollbarWidth: 'thin', scrollbarColor: '#d1d5db #f3f4f6' }}
+        >
           {QUICK_ACTIONS.map((action) => (
             <button
               key={action.intent}
