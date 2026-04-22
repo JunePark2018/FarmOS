@@ -7,10 +7,7 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from dotenv import load_dotenv
 
-try:
-    from defusedxml import ElementTree as ET
-except ImportError:
-    import xml.etree.ElementTree as ET
+from defusedxml import ElementTree as ET
 
 # .env 환경변수 로딩 (백엔드 기준 폴더)
 env_path = Path(__file__).resolve().parent.parent.parent / "backend" / ".env"

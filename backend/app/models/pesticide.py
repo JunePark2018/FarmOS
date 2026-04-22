@@ -12,9 +12,11 @@ class PesticideProduct(Base):
     __tablename__ = "rag_pesticide_documents"
 
     document_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # FK에 인덱스를 추가하여 조인 성능 최적화 (CoderrabitAI 리뷰 반영)
     application_id: Mapped[int] = mapped_column(
         ForeignKey("rag_pesticide_product_applications.application_id"),
-        nullable=False
+        nullable=False,
+        index=True
     )
     
     crop_name: Mapped[str] = mapped_column(Text, nullable=False, index=True)
@@ -30,7 +32,7 @@ class PesticideProduct(Base):
     max_use_count_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     formulation_name: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    # 실제 상세 정보 테이블과 연결 (필요 시)
+    # N:1 관계 (여러 제품 문서가 하나의 등록 정보에 연결될 수 있음)
     details: Mapped["PesticideApplication"] = relationship(back_populates="document_entry")
 
 
@@ -41,10 +43,10 @@ class PesticideApplication(Base):
 
     application_id: Mapped[int] = mapped_column(Integer, primary_key=True)
     
-    # RAG 테이블에는 요약되어 있지만 여기엔 풀 텍스트가 있을 확률이 높음
     application_method: Mapped[str | None] = mapped_column(Text, nullable=True)
     application_timing: Mapped[str | None] = mapped_column(Text, nullable=True)
     dilution_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     max_use_count_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     
-    document_entry: Mapped["PesticideProduct"] = relationship(back_populates="details")
+    # 1:N 관계 (하나의 등록 정보에 여러 RAG 문서가 매달릴 수 있음)
+    document_entry: Mapped[list["PesticideProduct"]] = relationship(back_populates="details")

@@ -72,7 +72,7 @@ async def create_diagnosis_history(
     region = payload.region
     final_result: dict | None = None
 
-    # 💡 정상 상태인 경우 AI 워크플로우를 타지 않고 즉시 반환 (비용 및 시간 절감)
+    # 💡 정상 상태인 경우 AI 워크플로우를 타지 않고 즉시 반환
     if pest == "정상":
         final_result = {
             "result_text": (
@@ -92,9 +92,9 @@ async def create_diagnosis_history(
                     analysis_result = state_data.get("analysis_result")
                     if isinstance(analysis_result, dict):
                         final_result = analysis_result
-        except Exception as e:
+        except Exception:
             logger.exception("진단 워크플로우 실행 실패")
-            raise HTTPException(status_code=500, detail="진단 결과 생성에 실패했습니다.") from e
+            raise HTTPException(status_code=500, detail="진단 결과 생성에 실패했습니다.")
 
     if not final_result or not final_result.get("result_text"):
         raise HTTPException(status_code=500, detail="진단 결과 생성에 실패했습니다.")
@@ -134,9 +134,9 @@ async def create_diagnosis_history(
                 "created_at": new_history.created_at.isoformat()
             }
         }
-    except Exception as e:
+    except Exception:
         logger.exception("Diagnosis history 저장 실패")
-        raise HTTPException(status_code=500, detail="DB 저장 중 오류가 발생했습니다.") from e
+        raise HTTPException(status_code=500, detail="DB 저장 중 오류가 발생했습니다.")
 
 @router.get("/history/{history_id}/chat")
 async def get_chat_messages(
@@ -176,7 +176,7 @@ async def add_chat_message(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """채팅 메시지 추가."""
+    """채팅 메시지 추가 (httpx 커넥션 누수 방지 적용)."""
     check_query = select(DiagnosisHistory).where(
         (DiagnosisHistory.id == history_id) & (DiagnosisHistory.user_id == current_user.id)
     )
@@ -207,51 +207,51 @@ async def add_chat_message(
         ai_reply = "API 키가 없어 답변할 수 없습니다."
         if api_key and api_key != "dummy":
             try:
-                custom_async_client = httpx.AsyncClient(
+                # async with 블록을 사용하여 커넥션 누수 방지
+                async with httpx.AsyncClient(
                     http1=True,
                     http2=False,
                     timeout=httpx.Timeout(180.0, connect=20.0)
-                )
-
-                llm = ChatOpenAI(
-                    model=model_name,
-                    api_key=api_key,
-                    base_url=settings.OPENROUTER_URL,
-                    temperature=0.0,
-                    http_async_client=custom_async_client,
-                    model_kwargs={
-                        "extra_body": {
-                            "reasoning": {
-                                "effort": "minimal",
-                                "exclude": True
+                ) as custom_async_client:
+                    llm = ChatOpenAI(
+                        model=model_name,
+                        api_key=api_key,
+                        base_url=settings.OPENROUTER_URL,
+                        temperature=0.0,
+                        http_async_client=custom_async_client,
+                        model_kwargs={
+                            "extra_body": {
+                                "reasoning": {
+                                    "effort": "minimal",
+                                    "exclude": True
+                                }
                             }
                         }
-                    }
-                )
-                
-                system_content = (
-                    "당신은 친절하고 전문적인 'FarmOS 해충 진단봇'입니다. 사용자의 농업 고민을 해결해 주는 든든한 조력자 역할을 수행합니다.\n\n"
-                    f"현재 상담 대상: {history.crop} ({history.pest})\n"
-                    f"지역: {history.region}\n\n"
-                    "[대화 스타일 가이드 - 반드시 준수]\n"
-                    "1. 정중한 어조: 모든 답변은 반드시 **정중한 존댓말(해요체 또는 하십시오체)**을 사용하세요. 절대 반말을 사용하지 마세요.\n"
-                    "2. 자연스러운 흐름: 기계적인 문구('질문하셨으므로 답합니다' 등)를 피하고, 전문 상담원처럼 부드럽고 친절하게 답변하세요.\n"
-                    "3. 핵심 중심: 사용자가 궁금해하는 정보를 가장 먼저 전달하며, 3~5문장 내외의 간결함을 유지하세요.\n"
-                    "4. 정체성: 어떤 모델인지 혹은 누구인지 묻는 질문에는 '저는 FarmOS 해충 진단봇입니다'라고 정중하게 소개하며 답변하세요.\n"
-                    "5. 가독성 및 맥락: 마크다운 활용 및 이전 대화 내용을 기억하여 답변하세요."
-                )
-                
-                chat_msgs = [SystemMessage(content=system_content)]
-                for m in db_msgs:
-                    if m.role == "user":
-                        chat_msgs.append(HumanMessage(content=m.content))
-                    elif m.role == "assistant":
-                        chat_msgs.append(AIMessage(content=m.content))
-                        
-                chain = llm | StrOutputParser()
-                ai_reply = await chain.ainvoke(chat_msgs)
-            except Exception as e:
-                logger.error(f"Chat generation error for history {history_id}: {e}", exc_info=True)
+                    )
+                    
+                    system_content = (
+                        "당신은 친절하고 전문적인 'FarmOS 해충 진단봇'입니다.\n\n"
+                        f"현재 상담 대상: {history.crop} ({history.pest})\n"
+                        f"지역: {history.region}\n\n"
+                        "[대화 스타일 가이드 - 반드시 준수]\n"
+                        "1. 본론 중심: **질문에 답변할 때는 '저는 ~입니다'와 같은 자기소개나 불필요한 서론을 절대 하지 마세요.** 인사말도 생략하고 즉시 답변(본론)부터 정중하게 시작하세요.\n"
+                        "2. 정체성(예외): 사용자가 '너는 누구야?', '무슨 모델이야?' 등 당신의 **정체성에 대해 직접적으로 물었을 때만** 자신을 'FarmOS 해충 진단봇'이라고 정중하게 소개하세요.\n"
+                        "3. 정중한 어조: 모든 답변은 반드시 정중한 존댓말을 사용하며, 절대 반말을 하지 마세요.\n"
+                        "4. 간결함: 핵심 정보 위주로 3~5문장 내외로 답변하고 마크다운을 활용하세요.\n"
+                        "5. 맥락 유지: 이전 대화 내용을 기억하여 자연스럽게 상담을 이어가세요."
+                    )
+                    
+                    chat_msgs = [SystemMessage(content=system_content)]
+                    for m in db_msgs:
+                        if m.role == "user":
+                            chat_msgs.append(HumanMessage(content=m.content))
+                        elif m.role == "assistant":
+                            chat_msgs.append(AIMessage(content=m.content))
+                            
+                    chain = llm | StrOutputParser()
+                    ai_reply = await chain.ainvoke(chat_msgs)
+            except Exception:
+                logger.exception("Chat generation error for history %s", history_id)
                 ai_reply = "AI 답변 생성 중 오류가 발생했습니다."
 
         ai_msg = DiagnosisChatMessage(

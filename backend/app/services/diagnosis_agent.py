@@ -2,6 +2,9 @@ import os
 import time
 import json
 import re
+import logging
+import httpx
+import asyncio
 from typing import TypedDict, Optional
 from dotenv import load_dotenv
 from langgraph.graph import StateGraph, START, END
@@ -15,6 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import joinedload
 
 load_dotenv()
+logger = logging.getLogger(__name__)
 
 class DiagnosisState(TypedDict):
     pest: str
@@ -302,160 +306,98 @@ async def fetch_weather(state: DiagnosisState) -> dict:
     if not api_candidates:
         return {"weather_data": {"status": "에러", "message": "API 키 오류"}}
 
-    import requests
-    from datetime import datetime, timedelta
-    
-    # 1. Kakao API로 주소를 좌표로 변환
     nx, ny = "60", "127" # default fallback (서울)
     try:
         if kakao_key:
             kakao_url = f"https://dapi.kakao.com/v2/local/search/address.json?query={urllib.parse.quote(region)}"
             headers = {"Authorization": f"KakaoAK {kakao_key}"}
+            # requests 대신 httpx 권장이나 bootstrap 시점 호환성 유지
+            import requests
             k_resp = requests.get(kakao_url, headers=headers, timeout=5)
             if k_resp.status_code == 200:
                 k_data = k_resp.json()
                 if k_data.get("documents"):
                     doc = k_data["documents"][0]
-                    lat = float(doc["y"])
-                    lon = float(doc["x"])
+                    lat, lon = float(doc["y"]), float(doc["x"])
                     nx, ny = map_to_grid(lat, lon)
-    except Exception as e:
-        print("Kakao API Error:", e)
+    except Exception:
+        logger.exception("Kakao API Error for region %s", region)
 
     # 2. 기상청 단기예보 조회 (약 3일치)
+    from datetime import datetime, timedelta
     current_time = datetime.now()
     if current_time.hour < 2 or (current_time.hour == 2 and current_time.minute < 10):
         target = current_time - timedelta(days=1)
         target = target.replace(hour=23, minute=0, second=0)
-        base_date = target.strftime("%Y%m%d")
-        base_time = "2300"
+        base_date, base_time = target.strftime("%Y%m%d"), "2300"
     else:
-        base_date = current_time.strftime("%Y%m%d")
-        base_time = "0200"
+        base_date, base_time = current_time.strftime("%Y%m%d"), "0200"
     
     url = "https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst"
     last_error = "기상청 예보 조회 실패"
 
+    import requests
     for service_key in api_candidates:
-        params = {
-            "serviceKey": service_key,
-            "pageNo": "1",
-            "numOfRows": "1000",
-            "dataType": "JSON",
-            "base_date": base_date,
-            "base_time": base_time,
-            "nx": nx,
-            "ny": ny,
-        }
-
+        params = {"serviceKey": service_key, "pageNo": "1", "numOfRows": "1000", "dataType": "JSON", "base_date": base_date, "base_time": base_time, "nx": nx, "ny": ny}
         try:
             resp = requests.get(url, params=params, timeout=10)
         except Exception as e:
             last_error = f"기상청 요청 예외: {str(e)}"
             continue
 
-        raw_text = resp.text.strip()
         if resp.status_code != 200:
             last_error = f"기상청 서버 응답 오류({resp.status_code})"
             continue
-        if raw_text == "Unauthorized":
-            last_error = "기상청 API 인증 오류(Unauthorized)"
-            continue
 
-        try:
-            data = resp.json()
-        except Exception:
-            last_error = "기상청 응답 파싱 오류(JSON 아님)"
-            continue
+        try: data = resp.json()
+        except Exception: continue
 
         header = data.get("response", {}).get("header", {})
-        result_code = str(header.get("resultCode", "")).strip()
-        result_msg = str(header.get("resultMsg", "")).strip()
-        if result_code not in {"00", "0", "INFO-000"}:
-            last_error = f"기상청 API 오류({result_code}): {result_msg or '원인 불명'}"
+        if str(header.get("resultCode", "")) not in {"00", "0", "INFO-000"}:
+            last_error = f"기상청 API 오류: {header.get('resultMsg')}"
             continue
 
         items = data.get("response", {}).get("body", {}).get("items", {}).get("item", [])
-        if not isinstance(items, list) or not items:
-            last_error = "기상청 예보 항목이 비어 있습니다."
-            continue
+        if not items: continue
 
         forecast_by_date: dict[str, dict[str, object]] = {}
         for item in items:
-            if not isinstance(item, dict):
-                continue
-
-            fcst_date = item.get("fcstDate")
-            fcst_time = item.get("fcstTime")
-            cat = item.get("category")
-            val = item.get("fcstValue")
-
-            dt_key = f"{fcst_date}_{fcst_time}"
-            if dt_key not in forecast_by_date:
-                forecast_by_date[dt_key] = {}
-
-            if cat == "TMP": forecast_by_date[dt_key]["temperature"] = val
-            elif cat == "TMN": forecast_by_date[dt_key]["daily_min_temp"] = val
-            elif cat == "TMX": forecast_by_date[dt_key]["daily_max_temp"] = val
-            elif cat == "POP": forecast_by_date[dt_key]["precipitation_prob"] = val
-            elif cat == "WSD": forecast_by_date[dt_key]["wind_speed"] = val
-            elif cat == "REH": forecast_by_date[dt_key]["humidity"] = val
-            elif cat == "SKY": forecast_by_date[dt_key]["sky"] = val
-            elif cat == "PTY": forecast_by_date[dt_key]["precipitation_type"] = val
+            fd, ft, cat, val = item.get("fcstDate"), item.get("fcstTime"), item.get("category"), item.get("fcstValue")
+            dt_key = f"{fd}_{ft}"
+            if dt_key not in forecast_by_date: forecast_by_date[dt_key] = {}
+            forecast_by_date[dt_key][cat] = val
 
         daily_summary: dict[str, dict[str, object]] = {}
         for dt_key, fcst in forecast_by_date.items():
             d = dt_key.split("_")[0]
-            if d not in daily_summary:
-                daily_summary[d] = {"temps": [], "pops": [], "hums": [], "winds": [], "skys": [], "ptys": [], "tmn": None, "tmx": None}
-
-            if "temperature" in fcst:
-                try: daily_summary[d]["temps"].append(float(fcst["temperature"]))
-                except (TypeError, ValueError): pass
-            if "precipitation_prob" in fcst:
-                try: daily_summary[d]["pops"].append(int(fcst["precipitation_prob"]))
-                except (TypeError, ValueError): pass
-            if "wind_speed" in fcst:
-                try: daily_summary[d]["winds"].append(float(fcst["wind_speed"]))
-                except (TypeError, ValueError): pass
-            if "daily_min_temp" in fcst:
-                try: daily_summary[d]["tmn"] = float(str(fcst["daily_min_temp"]).replace("℃", ""))
-                except (TypeError, ValueError): pass
-            if "daily_max_temp" in fcst:
-                try: daily_summary[d]["tmx"] = float(str(fcst["daily_max_temp"]).replace("℃", ""))
-                except (TypeError, ValueError): pass
-            if "sky" in fcst:
-                try: daily_summary[d]["skys"].append(int(fcst["sky"]))
-                except (TypeError, ValueError): pass
-            if "precipitation_type" in fcst:
-                try: daily_summary[d]["ptys"].append(int(fcst["precipitation_type"]))
-                except (TypeError, ValueError): pass
+            if d not in daily_summary: daily_summary[d] = {"temps": [], "pops": [], "winds": [], "skys": [], "ptys": [], "tmn": None, "tmx": None}
+            if "TMP" in fcst: daily_summary[d]["temps"].append(float(fcst["TMP"]))
+            if "POP" in fcst: daily_summary[d]["pops"].append(int(fcst["POP"]))
+            if "WSD" in fcst: daily_summary[d]["winds"].append(float(fcst["WSD"]))
+            if "TMN" in fcst: daily_summary[d]["tmn"] = float(str(fcst["TMN"]).replace("℃", ""))
+            if "TMX" in fcst: daily_summary[d]["tmx"] = float(str(fcst["TMX"]).replace("℃", ""))
+            if "SKY" in fcst: daily_summary[d]["skys"].append(int(fcst["SKY"]))
+            if "PTY" in fcst: daily_summary[d]["ptys"].append(int(fcst["PTY"]))
 
         formatted_summary = {}
         for d, vals in daily_summary.items():
-            temps = vals["temps"]
-            min_t = vals["tmn"] if vals.get("tmn") is not None else (min(temps) if temps else None)
-            max_t = vals["tmx"] if vals.get("tmx") is not None else (max(temps) if temps else None)
-            max_pty = max(vals["ptys"]) if vals["ptys"] else 0
-            max_sky = max(vals["skys"]) if vals["skys"] else 1
-            condition_text = "☀️ 맑음"
-            if max_pty > 0: condition_text = "❄️ 눈" if max_pty == 3 else "🌧️ 비"
+            min_t = vals["tmn"] if vals["tmn"] is not None else (min(vals["temps"]) if vals["temps"] else None)
+            max_t = vals["tmx"] if vals["tmx"] is not None else (max(vals["temps"]) if vals["temps"] else None)
+            max_pty, max_sky = max(vals["ptys"]) if vals["ptys"] else 0, max(vals["skys"]) if vals["skys"] else 1
+            cond = "☀️ 맑음"
+            if max_pty > 0: cond = "❄️ 눈" if max_pty == 3 else "🌧️ 비"
             else:
-                if max_sky >= 4: condition_text = "☁️ 흐림"
-                elif max_sky >= 3: condition_text = "⛅ 구름많음"
+                if max_sky >= 4: cond = "☁️ 흐림"
+                elif max_sky >= 3: cond = "⛅ 구름많음"
 
             if min_t is not None and max_t is not None:
-                formatted_summary[d] = {
-                    "min_temp": min_t, "max_temp": max_t, "max_precip_prob": max(vals["pops"]) if vals["pops"] else 0,
-                    "max_wind_speed": max(vals["winds"]) if vals["winds"] else 0.0, "condition": condition_text
-                }
+                formatted_summary[d] = {"min_temp": min_t, "max_temp": max_t, "max_precip_prob": max(vals["pops"]) if vals["pops"] else 0, "max_wind_speed": max(vals["winds"]) if vals["winds"] else 0.0, "condition": cond}
 
         if formatted_summary:
             w_dict = {"daily_forecast": formatted_summary, "query_address": region, "grid": f"{nx},{ny}"}
             weather_cache[region] = (now, w_dict)
             return {"weather_data": w_dict}
 
-    print(f"Weather API Error: {last_error}")
     return {"weather_data": {"status": "에러", "message": last_error}}
 
 from app.models.ncpms import NcpmsDiagnosis
@@ -480,8 +422,9 @@ async def fetch_ncpms(state: DiagnosisState) -> dict:
                 if row.prevent_method: parts.append(f"### {pest} 방제방법\n\n{row.prevent_method.strip()}")
                 return {"ncpms_data": "\n\n".join(parts) if parts else "데이터 없음"}
             return {"ncpms_data": "NCPMS 데이터를 찾을 수 없습니다."}
-    except Exception as e:
-        return {"ncpms_data": f"NCPMS 조회 에러: {str(e)}"}
+    except Exception:
+        logger.exception("NCPMS DB search error for pest %s", pest)
+        return {"ncpms_data": "NCPMS 조회 중 오류가 발생했습니다."}
 
 async def fetch_pesticide(state: DiagnosisState) -> dict:
     pest, crop = state.get("pest", "알 수 없음"), state.get("crop", "알 수 없음")
@@ -493,7 +436,6 @@ async def fetch_pesticide(state: DiagnosisState) -> dict:
             ).limit(50)
             result = await db.execute(query)
             products = result.scalars().all()
-            
             if not products: return {"pesticide_data": "[]"}
 
             grouped = {}
@@ -502,40 +444,28 @@ async def fetch_pesticide(state: DiagnosisState) -> dict:
                 if ing_name not in grouped:
                     if len(grouped) >= 3: continue
                     grouped[ing_name] = {"ingredient_name": ing_name, "products": []}
-                
                 if any(ep["brand_name"] == (p.brand_name or "") for ep in grouped[ing_name]["products"]) or len(grouped[ing_name]["products"]) >= 3:
                     continue
                 
-                m_raw = (p.application_method or "").strip()
-                t_raw = (p.application_timing or "").strip()
-                formulation = (p.formulation_name or "").strip()
+                m_raw, t_raw, formulation = (p.application_method or "").strip(), (p.application_timing or "").strip(), (p.formulation_name or "").strip()
+                def norm_t(v):
+                    if not v or v == "정보없음": return ""
+                    return f"수확 {v}일 전까지" if v.isdigit() else v
 
-                # 💡 지능형 데이터 정제: 시점 정보 중복 제거 (정식전 + 정식기 -> 정식전)
-                def clean_timing(m, t):
-                    if not m and not t: return "정보없음"
-                    if not m or not t: 
-                        v = m or t
-                        return f"수확 {v}일 전까지" if v.isdigit() else v
-                    
-                    # 숫자 복원
-                    m_norm = f"수확 {m}일 전까지" if m.isdigit() else m
-                    t_norm = f"수확 {t}일 전까지" if t.isdigit() else t
+                v1, v2 = norm_t(m_raw), norm_t(t_raw)
+                timing_display = "정보없음"
+                if v1 and v2:
+                    if v1 == v2: timing_display = v1
+                    else:
+                        roots = ["정식", "파종", "발생", "수확"]
+                        merged = False
+                        for r in roots:
+                            if r in v1 and r in v2:
+                                timing_display = v1 if ("전" in v1 or "후" in v1) else v2
+                                merged = True; break
+                        if not merged: timing_display = f"{v1} [{v2}]"
+                else: timing_display = v1 or v2 or "정보없음"
 
-                    if m_norm == t_norm: return m_norm
-                    
-                    # 어근 기반 중복 제거 (정식, 파종, 발생 등)
-                    roots = ["정식", "파종", "발생", "수확"]
-                    for r in roots:
-                        if r in m_norm and r in t_norm:
-                            # 둘 다 어근을 포함하면 더 구체적인 것(전, 후 등)을 선택하거나 합침
-                            if "기" in m_norm and ("전" in t_norm or "후" in t_norm): return t_norm
-                            if "기" in t_norm and ("전" in m_norm or "후" in m_norm): return m_norm
-                    
-                    return f"{m_norm} [{t_norm}]"
-
-                timing_display = clean_timing(m_raw, t_raw)
-                
-                # 제형 기반 행동 도출
                 action = "살포"
                 if "입제" in formulation: action = "토양혼화/처리"
                 elif any(f in formulation for f in ["유제", "수화제", "액제", "액상"]): action = "경엽살포"
@@ -549,8 +479,8 @@ async def fetch_pesticide(state: DiagnosisState) -> dict:
                     "max_use_count_text": p.max_use_count_text or "정보없음"
                 })
             return {"pesticide_data": json.dumps(list(grouped.values()), ensure_ascii=False)}
-    except Exception as e:
-        print(f"Pesticide Fetch error: {e}")
+    except Exception:
+        logger.exception("Pesticide fetch error for pest %s", pest)
         return {"pesticide_data": "[]"}
 
 async def generate_diagnosis(state: DiagnosisState) -> dict:
@@ -558,93 +488,86 @@ async def generate_diagnosis(state: DiagnosisState) -> dict:
     api_key, model_name = settings.OPENROUTER_API_KEY, settings.OPENROUTER_PEST_RAG_MODEL
     if not api_key or api_key == "dummy": return {"analysis_result": {"result_text": "API 키 오류"}}
 
-    import httpx
-    custom_async_client = httpx.AsyncClient(http1=True, http2=False, timeout=httpx.Timeout(180.0, connect=20.0))
-    llm = ChatOpenAI(
-        model=model_name, api_key=api_key, base_url=settings.OPENROUTER_URL, temperature=0.0,
-        http_async_client=custom_async_client,
-        model_kwargs={"extra_body": {"reasoning": {"effort": "minimal", "exclude": True}}}
-    )
-
     try:
-        weather_info = state.get("weather_data", {})
-        weather_summary = _build_weather_unavailable_card("기상 데이터 없음")
-        weather_for_llm = "데이터 없음"
-        daily = weather_info.get("daily_forecast") if isinstance(weather_info, dict) else None
-        if daily:
-            html_cards = ["<div class='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 my-3'>"]
-            for dk, td in daily.items():
-                d_str = f"{dk[:4]}-{dk[4:6]}-{dk[6:]}"
-                card = f"<div class='bg-blue-50/50 border border-blue-100 rounded-xl p-3 flex flex-col items-center justify-center text-center shadow-sm'><div class='font-bold text-gray-700 mb-1 text-[13px]'>{d_str}</div><div class='font-medium text-blue-800 text-[13px] mb-1'>{td['condition']}</div><div class='text-xl flex flex-col items-center justify-center font-black text-blue-600 mb-1'><span class='text-[10px] font-normal text-gray-500 bg-white px-2 py-0.5 rounded-full shadow-sm mb-1 mt-1'>최저/최고</span><div>{td['min_temp']}°<span class='text-gray-400 text-sm font-normal mx-1'>/</span>{td['max_temp']}°</div></div><div class='flex flex-col gap-0.5 text-xs text-gray-600 mt-1'><span class='flex items-center justify-center bg-white px-2 py-0.5 rounded border border-blue-100 text-blue-800 font-medium'>☔ 강수 {td['max_precip_prob']}%</span><span class='flex items-center justify-center bg-white px-2 py-0.5 rounded border border-blue-100 text-blue-800 font-medium'>💨 풍속 {td['max_wind_speed']}m/s</span></div></div>"
-                html_cards.append(card)
-            html_cards.append("</div>")
-            weather_summary = "".join(html_cards)
-            first_day = daily[sorted(daily.keys())[0]]
-            weather_for_llm = f"기온 {first_day['min_temp']}~{first_day['max_temp']}°C, 강수 {first_day['max_precip_prob']}%"
+        # async with 블록으로 감싸서 리소스 누수 방지 (CoderrabitAI 리뷰 반영)
+        async with httpx.AsyncClient(http1=True, http2=False, timeout=httpx.Timeout(180.0, connect=20.0)) as custom_async_client:
+            llm = ChatOpenAI(
+                model=model_name, api_key=api_key, base_url=settings.OPENROUTER_URL, temperature=0.0,
+                http_async_client=custom_async_client,
+                model_kwargs={"extra_body": {"reasoning": {"effort": "minimal", "exclude": True}}}
+            )
 
-        try: grouped_results = json.loads(state.get("pesticide_data", "[]"))
-        except: grouped_results = []
+            weather_info = state.get("weather_data", {})
+            weather_summary, weather_for_llm = _build_weather_unavailable_card("기상 데이터 없음"), "데이터 없음"
+            daily = weather_info.get("daily_forecast") if isinstance(weather_info, dict) else None
+            if daily:
+                html_cards = ["<div class='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 my-3'>"]
+                for dk, td in daily.items():
+                    d_str = f"{dk[:4]}-{dk[4:6]}-{dk[6:]}"
+                    html_cards.append(f"<div class='bg-blue-50/50 border border-blue-100 rounded-xl p-3 flex flex-col items-center justify-center text-center shadow-sm'><div class='font-bold text-gray-700 mb-1 text-[13px]'>{d_str}</div><div class='font-medium text-blue-800 text-[13px] mb-1'>{td['condition']}</div><div class='text-xl flex flex-col items-center justify-center font-black text-blue-600 mb-1'><span class='text-[10px] font-normal text-gray-500 bg-white px-2 py-0.5 rounded-full shadow-sm mb-1 mt-1'>최저/최고</span><div>{td['min_temp']}°<span class='text-gray-400 text-sm font-normal mx-1'>/</span>{td['max_temp']}°</div></div><div class='flex flex-col gap-0.5 text-xs text-gray-600 mt-1'><span class='flex items-center justify-center bg-white px-2 py-0.5 rounded border border-blue-100 text-blue-800 font-medium'>☔ 강수 {td['max_precip_prob']}%</span><span class='flex items-center justify-center bg-white px-2 py-0.5 rounded border border-blue-100 text-blue-800 font-medium'>💨 풍속 {td['max_wind_speed']}m/s</span></div></div>")
+                html_cards.append("</div>")
+                weather_summary = "".join(html_cards)
+                fd = daily[sorted(daily.keys())[0]]
+                weather_for_llm = f"기온 {fd['min_temp']}~{fd['max_temp']}°C, 강수 {fd['max_precip_prob']}%"
 
-        pest_html = ""
-        for item in grouped_results:
-            pest_html += f"<div class='bg-gray-50 border border-gray-200 rounded-xl p-4 my-3'><div class='font-bold text-primary mb-3 text-base flex items-center gap-2'><span>💊</span> 성분: {item['ingredient_name']}</div><div class='grid grid-cols-1 md:grid-cols-2 gap-3'>"
-            for prod in item.get("products", []):
-                pest_html += f"""<div class='bg-white rounded-lg p-3 shadow-none border border-gray-200 flex flex-col h-full'>
-                    <div class='font-bold text-gray-800 text-sm mb-3 flex items-center flex-wrap gap-2'>
-                        <span class='text-primary text-[15px]'>{prod['brand_name']}</span>
-                        <span class='text-[11px] font-normal text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full'>{prod['corporation_name']}</span>
-                    </div>
-                    <div class='grid grid-cols-2 gap-2 mt-auto'>
-                        <div class='flex flex-col p-1.5 bg-gray-50/50 rounded'>
-                            <span class='text-gray-400 mb-0.5 text-[10px]'>방제 방법</span>
-                            <span class='font-medium text-gray-700 text-[11px] line-clamp-2' title='{prod['application_method']}'>{prod['application_method']}</span>
-                        </div>
-                        <div class='flex flex-col p-1.5 bg-gray-50/50 rounded'>
-                            <span class='text-gray-400 mb-0.5 text-[10px]'>살포 시기</span>
-                            <span class='font-medium text-gray-700 text-[11px] line-clamp-2' title='{prod['application_timing']}'>{prod['application_timing']}</span>
-                        </div>
-                        <div class='flex flex-col p-1.5 bg-gray-50/50 rounded'>
-                            <span class='text-gray-400 mb-0.5 text-[10px]'>희석 배수</span>
-                            <span class='font-medium text-gray-700 text-[11px]'>{prod['dilution_text']}</span>
-                        </div>
-                        <div class='flex flex-col p-1.5 bg-gray-50/50 rounded'>
-                            <span class='text-gray-400 mb-0.5 text-[10px]'>사용 횟수</span>
-                            <span class='font-medium text-gray-700 text-[11px]'>{prod['max_use_count_text']}</span>
-                        </div>
-                    </div>
-                </div>"""
-            pest_html += "</div></div>"
-        if not pest_html: pest_html = "권장 농약 정보가 없습니다."
+            try: grouped_results = json.loads(state.get("pesticide_data", "[]"))
+            except: grouped_results = []
 
-        full_region = state.get("region", "서울")
-        display_region = " ".join(full_region.split()[:2]) if len(full_region.split()) >= 2 else full_region
-        pest_name, crop_display = state.get("pest", "알 수 없는 해충"), state.get("crop") or "전체 작물"
-        
-        json_payload = {"region": display_region, "crop_display": crop_display, "pest": pest_name, "weather_for_llm": weather_for_llm, "preventive_info": state.get("ncpms_data") or "데이터 없음", "pesticide_summary_text": _summarize_pesticides_for_prompt(grouped_results)}
-        
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", "당신은 'FarmOS 해충 진단봇'이며 전문 진단 요약을 생성하는 농업 전문가입니다. 반드시 JSON만 출력하라.\n출력 형식:\n{{\n  \"weather_advice\": \"...\",\n  \"strategy_bullets\": [\"...\", \"...\", \"...\"]\n}}"),
-            ("user", "{json_text}")
-        ])
-        chain = prompt | llm | StrOutputParser()
-        raw_res = await chain.ainvoke({"json_text": json.dumps(json_payload, ensure_ascii=False)})
-        
-        notes = _extract_json_object(raw_res) or {}
-        w_advice = _clean_ai_text(str(notes.get("weather_advice", ""))) or _build_weather_advice(weather_info)
-        s_bullets = [str(b).lstrip("-• ").strip() for b in notes.get("strategy_bullets", []) if str(b).strip()][:3]
-        
-        response = _compose_final_response(
-            pest_identification_line=f"🔍 입력하신 이미지는 **{pest_name}**(으)로 인식되었습니다.",
-            display_region=display_region, crop_display=crop_display, pest=pest_name, pest_html=pest_html,
-            preventive_info=state.get("ncpms_data") or "데이터 없음", weather_summary=weather_summary,
-            weather_advice=w_advice, strategy_bullets=s_bullets,
-        )
-        await custom_async_client.aclose()
-        return {"analysis_result": {"result_text": response}}
-    except Exception as e:
-        print(f"LLM Error: {e}")
-        await custom_async_client.aclose()
-        return {"analysis_result": {"result_text": f"오류 발생: {e}"}}
+            pest_html = ""
+            for item in grouped_results:
+                pest_html += f"<div class='bg-gray-50 border border-gray-200 rounded-xl p-4 my-3'><div class='font-bold text-primary mb-3 text-base flex items-center gap-2'><span>💊</span> 성분: {item['ingredient_name']}</div><div class='grid grid-cols-1 md:grid-cols-2 gap-3'>"
+                for prod in item.get("products", []):
+                    pest_html += f"""<div class='bg-white rounded-lg p-3 shadow-none border border-gray-200 flex flex-col h-full'>
+                        <div class='font-bold text-gray-800 text-sm mb-3 flex items-center flex-wrap gap-2'>
+                            <span class='text-primary text-[15px]'>{prod['brand_name']}</span>
+                            <span class='text-[11px] font-normal text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full'>{prod['corporation_name']}</span>
+                        </div>
+                        <div class='grid grid-cols-2 gap-2 mt-auto'>
+                            <div class='flex flex-col p-1.5 bg-gray-50/50 rounded'>
+                                <span class='text-gray-400 mb-0.5 text-[10px]'>방제 방법</span>
+                                <span class='font-medium text-gray-700 text-[11px] line-clamp-2' title='{prod['application_method']}'>{prod['application_method']}</span>
+                            </div>
+                            <div class='flex flex-col p-1.5 bg-gray-50/50 rounded'>
+                                <span class='text-gray-400 mb-0.5 text-[10px]'>살포 시기</span>
+                                <span class='font-medium text-gray-700 text-[11px] line-clamp-2' title='{prod['application_timing']}'>{prod['application_timing']}</span>
+                            </div>
+                            <div class='flex flex-col p-1.5 bg-gray-50/50 rounded'>
+                                <span class='text-gray-400 mb-0.5 text-[10px]'>희석 배수</span>
+                                <span class='font-medium text-gray-700 text-[11px]'>{prod['dilution_text']}</span>
+                            </div>
+                            <div class='flex flex-col p-1.5 bg-gray-50/50 rounded'>
+                                <span class='text-gray-400 mb-0.5 text-[10px]'>사용 횟수</span>
+                                <span class='font-medium text-gray-700 text-[11px]'>{prod['max_use_count_text']}</span>
+                            </div>
+                        </div>
+                    </div>"""
+                pest_html += "</div></div>"
+            if not pest_html: pest_html = "권장 농약 정보가 없습니다."
+
+            pest_name, crop_display = state.get("pest", "알 수 없는 해충"), state.get("crop") or "전체 작물"
+            display_region = " ".join(state.get("region", "서울").split()[:2])
+            
+            json_payload = {"region": display_region, "crop_display": crop_display, "pest": pest_name, "weather_for_llm": weather_for_llm, "preventive_info": state.get("ncpms_data") or "데이터 없음", "pesticide_summary_text": _summarize_pesticides_for_prompt(grouped_results)}
+            
+            prompt = ChatPromptTemplate.from_messages([
+                ("system", "당신은 'FarmOS 해충 진단봇'이며 전문 진단 요약을 생성하는 농업 전문가입니다. 반드시 JSON만 출력하라.\n출력 형식:\n{{\n  \"weather_advice\": \"...\",\n  \"strategy_bullets\": [\"...\", \"...\", \"...\"]\n}}"),
+                ("user", "{json_text}")
+            ])
+            chain = prompt | llm | StrOutputParser()
+            raw_res = await chain.ainvoke({"json_text": json.dumps(json_payload, ensure_ascii=False)})
+            
+            notes = _extract_json_object(raw_res) or {}
+            response = _compose_final_response(
+                pest_identification_line=f"🔍 입력하신 이미지는 **{pest_name}**(으)로 인식되었습니다.",
+                display_region=display_region, crop_display=crop_display, pest=pest_name, pest_html=pest_html,
+                preventive_info=state.get("ncpms_data") or "데이터 없음", weather_summary=weather_summary,
+                weather_advice=_clean_ai_text(str(notes.get("weather_advice", ""))) or _build_weather_advice(weather_info),
+                strategy_bullets=[str(b).lstrip("-• ").strip() for b in notes.get("strategy_bullets", []) if str(b).strip()][:3],
+            )
+            return {"analysis_result": {"result_text": response}}
+    except Exception:
+        logger.exception("LLM generation error in diagnosis agent")
+        return {"analysis_result": {"result_text": "진단 결과 생성 중 오류가 발생했습니다."}}
 
 workflow = StateGraph(DiagnosisState)
 workflow.add_node("fetch_weather", fetch_weather)
