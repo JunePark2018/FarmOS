@@ -265,37 +265,54 @@ export default function DiagnosisPage() {
   }, [isPostcodeOpen]);
 
   const onDrop = useCallback((acceptedFiles: File[], fileRejections: any[]) => {
-    // 1. 기본 MIME 타입 거부 처리 (BMP 등)
     if (fileRejections.length > 0) {
-      toast.error('허용되지 않는 파일 형식입니다. JPG, PNG, WebP 이미지만 업로드 가능합니다.');
+      const error = fileRejections[0].errors[0];
+      if (error.code === 'file-invalid-type' || error.code === 'invalid-extension') {
+        toast.error('허용되지 않는 파일 형식입니다. JPG, PNG, WebP 이미지만 업로드 가능합니다.');
+      } else {
+        toast.error(error.message);
+      }
       return;
     }
 
     if (acceptedFiles.length > 0) {
-      const file = acceptedFiles[0];
-      const fileName = file.name.toLowerCase();
-      // 2. 확장자 직접 대조 (pjp, pjpeg, jfif 등 방어)
-      const allowedExtensions = ['.jpg', '.jpeg', '.png', '.webp'];
-      const isValidExtension = allowedExtensions.some(ext => fileName.endsWith(ext));
-
-      if (!isValidExtension) {
-        toast.error('허용되지 않는 확장자입니다. (.jpg, .png, .webp만 가능)');
-        return;
-      }
-
       startDiagnosis(false);
     }
   }, [selectedCrop, selectedRegion, testPest]);
 
+  // 파일 확장자 엄격 검증 함수
+  const fileValidator = (file: File) => {
+    const fileName = file.name.toLowerCase();
+    const allowedExtensions = ['.jpg', '.jpeg', '.png', '.webp'];
+    const isValid = allowedExtensions.some(ext => fileName.endsWith(ext));
+    
+    if (!isValid) {
+      return {
+        code: "invalid-extension",
+        message: "허용되지 않는 확장자입니다."
+      };
+    }
+    return null;
+  };
+
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
+    validator: fileValidator,
+    // 중복을 막기 위해 최소한의 MIME 구조만 유지
     accept: { 
       'image/jpeg': ['.jpg', '.jpeg'],
       'image/png': ['.png'],
       'image/webp': ['.webp']
     },
     maxFiles: 1,
+    multiple: false
   });
+
+  // input 속성에서 accept 문자열을 수동으로 재정의하여 중복 및 비표준 확장자 노출 방지
+  const customInputProps = {
+    ...getInputProps(),
+    accept: ".jpg,.jpeg,.png,.webp"
+  };
 
   const isAutoFilled = user?.location_category && user?.main_crop;
 
