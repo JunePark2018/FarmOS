@@ -53,6 +53,10 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 COLLECTION_NAME = "reviews_voyage_v35"
+# Migration note:
+#   이전 컬렉션: "reviews_bge_m3" (1024-dim, BGE-M3) → 현재: "reviews_voyage_v35" (1024-dim, Voyage v3.5).
+#   임베딩 모델/차원이 달라지면 벡터가 호환되지 않으므로 컬렉션 이름을 반드시 바꿔야 한다.
+#   컷오버 절차와 구(舊) 컬렉션 정리 방법은 docs/runbooks/review-embedding-migration.md 참조.
 
 
 class LiteLLMEmbeddingFunction(EmbeddingFunction[Documents]):
@@ -100,8 +104,11 @@ class LiteLLMEmbeddingFunction(EmbeddingFunction[Documents]):
                 data = resp.json()["data"]
                 embeddings.extend([d["embedding"] for d in data])
             except Exception as e:
-                logger.error(f"LiteLLM 임베딩 실패: {e}")
-                embeddings.extend([[0.0] * settings.EMBED_DIM for _ in batch])
+                logger.error(
+                    f"LiteLLM 임베딩 실패 (batch size={len(batch)}): {e}"
+                )
+                # 영벡터를 합성하면 컬렉션이 영구 오염되므로 호출자에게 예외를 전파한다.
+                raise
         return embeddings
 
 
@@ -109,11 +116,14 @@ class ReviewRAG:
     """리뷰 벡터 저장 및 의미 검색 서비스.
 
     학습 포인트:
-        이 클래스는 ChromaDB의 "reviews_nomic" 컬렉션을 관리합니다.
+        이 클래스는 ChromaDB의 COLLECTION_NAME (현재 "reviews_voyage_v35") 컬렉션을 관리합니다.
         컬렉션 = RDB의 테이블과 유사한 개념입니다.
 
-        Ollama nomic-embed-text 모델을 임베딩 함수로 사용합니다.
-        기본 영어 모델 대비 한국어 유사도 정확도가 크게 향상됩니다.
+        LiteLLM 프록시 경유 Voyage v3.5 (1024-dim) 를 임베딩 함수로 사용합니다.
+        이전에는 Ollama nomic-embed-text / BGE-M3 를 사용했으나, 한국어 리뷰에 대한
+        유사도 품질과 프록시 운영 편의성을 이유로 Voyage v3.5 로 전환했습니다.
+        모델/차원이 바뀌면 COLLECTION_NAME 도 함께 바꾸어 전체 재임베딩이 필요합니다.
+        운영 절차는 docs/runbooks/review-embedding-migration.md 참조.
     """
 
     def __init__(self):
@@ -230,7 +240,23 @@ class ReviewRAG:
                 for r in chunk
             ]
 
-            self.collection.add(documents=documents, metadatas=metadatas, ids=ids)
+            try:
+                self.collection.add(documents=documents, metadatas=metadatas, ids=ids)
+            except Exception as e:
+                # __call__ 에서 임베딩이 실패하면 예외가 올라온다.
+                # 해당 청크만 건너뛰고 다음 청크는 계속 처리한다 (영벡터 영구 저장 방지).
+                logger.error(
+                    f"청크 임베딩 실패, 해당 배치 건너뜀 ({len(chunk)}건): {e}"
+                )
+                progress = int(embedded / total * 100) if total else 100
+                yield {
+                    "progress": progress,
+                    "embedded": embedded,
+                    "total": total,
+                    "message": f"임베딩 실패로 {len(chunk)}건 건너뜀: {e}",
+                }
+                continue
+
             embedded += len(chunk)
             progress = int(embedded / total * 100)
 
