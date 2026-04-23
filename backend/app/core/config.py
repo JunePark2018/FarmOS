@@ -118,6 +118,15 @@ class Settings(BaseSettings):
     FONT_PATH: str = str(_BUNDLED_FONTS_DIR / "Pretendard-Regular.ttf")
     FONT_BOLD_PATH: str = str(_BUNDLED_FONTS_DIR / "Pretendard-Bold.ttf")
 
+    # 공익직불 RAG (정부 지원금 매칭) — subsidy-scoped, does not affect other modules
+    UPSTAGE_API_KEY: str = ""
+    # LLM URL/Key 는 저장소 공통의 LITELLM_URL / LITELLM_API_KEY 를 그대로 사용
+    # (diagnosis·review 모듈과 동일 경로 → 팀 API 사용량 통합 추적)
+    SUBSIDY_LLM_MODEL: str = "google/gemma-4-31b-it"
+    SUBSIDY_RERANKER_MODEL: str = "dragonkue/bge-reranker-v2-m3-ko"
+    SUBSIDY_PDF_PATH: str = "data/gov/2026_공익직불_시행지침.pdf"
+    SUBSIDY_MARKDOWN_CACHE_PATH: str = "data/gov/2026_공익직불_시행지침.md"
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 
 

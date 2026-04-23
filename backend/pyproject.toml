@@ -13,6 +13,7 @@ dependencies = [
     "httpx>=0.28.0",
     "langchain-core>=1.2.27",
     "langchain-openai>=1.1.12",
+    "langchain-upstage>=0.7.0",
     "langgraph>=1.1.6",
     "passlib[bcrypt]>=1.7.4",
     "psycopg2-binary>=2.9.11",
@@ -22,10 +23,25 @@ dependencies = [
     "python-multipart>=0.0.22",
     "rapidfuzz>=3.10.0",
     "ruff>=0.6.0",
+    "sentence-transformers>=3.3.0",
     "sqlalchemy[asyncio]>=2.0.48",
     "sse-starlette>=3.3.4",
     "uvicorn[standard]>=0.42.0",
 ]
 
+[project.scripts]
+# 공익직불 시행지침 PDF 인덱싱 CLI (팀원 신규 셋업 시 자동 실행되지만, 수동 재인덱싱용 편의 명령)
+# 사용: cd backend && uv run subsidy-ingest
+subsidy-ingest = "app.services.subsidy.gov_rag:run_ingest_pipeline"
+# PDF → Markdown 변환만 (Upstage Parse 호출, 최초 1회 또는 PDF 교체 시)
+subsidy-parse-pdf = "app.services.subsidy.pdf_ingest:_cli_main"
+
 [tool.uv]
 exclude-newer = "7 days"
+# [project.scripts] 엔트리포인트 설치를 활성화 (subsidy-ingest, subsidy-parse-pdf 명령어 등록용)
+package = true
+
+[tool.setuptools.packages.find]
+# data/, chroma_data/, logs/ 같은 런타임 산출물 디렉터리를 패키지 탐색에서 배제
+include = ["app*"]
+exclude = ["data*", "chroma_data*", "logs*", ".ruff_cache*"]

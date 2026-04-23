@@ -14,6 +14,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/harvest': '수확량 예측',
   '/journal': '영농일지',
   '/market': '농산물 시세 정보',
+  '/subsidy': '공익직불사업 매칭',
   '/scenario': '사과 농장 한 달 시나리오',
   '/profile': '내 프로필',
 };

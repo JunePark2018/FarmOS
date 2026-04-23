@@ -20,6 +20,7 @@ import OnboardingPage from '@/modules/auth/OnboardingPage';
 import FindIdPage from '@/modules/auth/FindIdPage';
 import FindPasswordPage from '@/modules/auth/FindPasswordPage';
 import DiagnosisChatPage from '@/modules/diagnosis/chat/DiagnosisChatPage';
+import SubsidyPage from '@/modules/subsidy/SubsidyPage';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading, needsOnboarding } = useAuth();
@@ -74,6 +75,7 @@ export default function App() {
               <Route path="harvest" element={<HarvestPage />} />
               <Route path="journal" element={<JournalPage />} />
               <Route path="market" element={<MarketPricePage />} />
+              <Route path="subsidy" element={<SubsidyPage />} />
               <Route path="scenario" element={<ScenarioPage />} />
               <Route path="profile" element={<ProfilePage />} />
             </Route>

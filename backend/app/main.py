@@ -18,6 +18,7 @@ from app.api import (
     pesticide,
     review_analysis,
     diagnosis,
+    subsidy,
 )
 from app.core.config import settings
 from app.core.database import async_session, close_db, init_db
@@ -32,6 +33,7 @@ from app.models.ai_agent import (  # noqa: F401 — Base.metadata 등록용 (age
     AiAgentActivityDaily,
     AiAgentActivityHourly,
 )
+from app.models.subsidy import Subsidy  # noqa: F401
 
 
 async def seed_users():
@@ -102,6 +104,41 @@ async def lifespan(app: FastAPI):
                     "ai_agent_bridge.start_failed err=%s", exc
                 )
 
+    # 공익직불 지원금 시드 (3개 프로그램)
+    from app.services.subsidy.seed_data import seed_subsidies
+    async with async_session() as db:
+        await seed_subsidies(db)
+
+    # 공익직불 RAG 준비 (팀원 신규 셋업 시 자동 인덱싱 포함):
+    #  1) RAG 싱글톤 + 리랭커 모델 사전 로드 → 첫 요청 지연 방지
+    #  2) ChromaDB 가 비어있고 Markdown 캐시가 있으면 자동 인덱싱
+    #     (Git 리포에 커밋된 data/gov/*.md 를 사용 — PDF 재파싱 불필요)
+    # 실패 시 서버 기동은 계속 (graceful fallback): /subsidy/match 는 DB 전용이므로 영향 없고,
+    # /subsidy/ask 는 빈 citation + escalation_needed=True 로 응답.
+    # 다만 관찰 가능성을 위해 app.state 에 플래그를 남겨 /health 등에서 확인 가능하게 함.
+    import asyncio as _asyncio
+    import logging as _logging
+    _log = _logging.getLogger("app.main")
+    app.state.subsidy_rag_ready = False
+    try:
+        from app.services.subsidy.gov_rag import _get_reranker, run_ingest_pipeline
+        from app.services.subsidy.tools import _get_rag
+
+        rag = await _asyncio.to_thread(_get_rag)
+        if rag.count() == 0:
+            _log.info("공익직불 ChromaDB 비어있음 — 캐시된 Markdown 으로 자동 인덱싱 시작")
+            try:
+                await _asyncio.to_thread(run_ingest_pipeline, False)
+            except FileNotFoundError as e:
+                _log.warning(f"자동 인덱싱 스킵 (Markdown 캐시 없음): {e}")
+            except Exception as e:
+                _log.error(f"자동 인덱싱 실패 — /subsidy/ask 는 빈 결과 반환: {e}", exc_info=True)
+        await _asyncio.to_thread(_get_reranker)
+        app.state.subsidy_rag_ready = rag.count() > 0
+    except Exception as e:
+        # UPSTAGE_API_KEY 미설정·네트워크 오류·모델 로드 실패 등 — 서버 기동은 계속
+        _log.warning(f"공익직불 RAG 준비 실패 (/subsidy/ask 제한 동작): {e}")
+
     yield
 
     if bridge is not None:
@@ -134,3 +171,4 @@ app.include_router(market.router, prefix=settings.API_V1_PREFIX)
 app.include_router(review_analysis.router, prefix=settings.API_V1_PREFIX)
 app.include_router(diagnosis.router, prefix=settings.API_V1_PREFIX)
 app.include_router(ai_agent.router, prefix=settings.API_V1_PREFIX)
+app.include_router(subsidy.router, prefix=settings.API_V1_PREFIX)
