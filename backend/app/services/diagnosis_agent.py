@@ -29,8 +29,6 @@ class DiagnosisState(TypedDict):
     pesticide_data: Optional[str]
     analysis_result: Optional[dict]
 
-from app.core.constants import FALLBACK_CROP_NAME
-
 # -----------------
 # Caching In-Memory (NCPMS & Weather)
 # -----------------
@@ -39,6 +37,7 @@ weather_cache = {} # key: region -> (timestamp_sec, data_str)
 
 NCPMS_CACHE_TTL = 30 * 24 * 3600  # 30일
 WEATHER_CACHE_TTL = 3 * 3600      # 3시간
+FALLBACK_CROP_NAME = "fallback"
 
 import math
 import urllib.parse
