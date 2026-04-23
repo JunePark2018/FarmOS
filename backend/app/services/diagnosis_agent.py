@@ -484,7 +484,7 @@ async def fetch_pesticide(state: DiagnosisState) -> dict:
 async def generate_diagnosis(state: DiagnosisState) -> dict:
     from app.core.config import settings
     api_key, model_name = settings.LITELLM_API_KEY, settings.LITELLM_MODEL
-    if not api_key or api_key == "dummy": return {"analysis_result": {"result_text": "API 키 오류"}}
+    if not api_key: return {"analysis_result": {"result_text": "API 키 오류"}}
 
     try:
         # async with 블록으로 감싸서 리소스 누수 방지 (CoderrabitAI 리뷰 반영)

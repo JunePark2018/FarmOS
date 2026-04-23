@@ -15,13 +15,24 @@ interface Message {
 // 마크다운 렌더러 컴포넌트 (개선된 파서)
 function MarkdownRenderer({ content }: { content: string }) {
   const parseMarkdown = (text: string): string => {
+    const escapeHtml = (value: string): string =>
+      value
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+
+    const formatInline = (value: string): string =>
+      escapeHtml(value).replace(/\*\*(.+?)\*\*/g, '<strong class="font-semibold">$1</strong>');
+
     const normalizeLegacyPlaceholders = (value: string): string =>
       value
         .replace(/(?:\\)?\{\{\s*PEST_IDENTIFICATION_LINE\s*\}\}|(?:\\)?\{\s*PEST_IDENTIFICATION_LINE\s*\}|^PEST_IDENTIFICATION_LINE$/gm, '🔍 입력하신 이미지는 해충으로 인식되었습니다. 이를 기반으로 답변하겠습니다.')
         .replace(/(?:\\)?\{\{\s*PESTICIDE_HTML\s*\}\}|(?:\\)?\{\s*PESTICIDE_HTML\s*\}|^PESTICIDE_HTML$/gm, '<p class="my-2 text-gray-400 italic">권장 농약 정보가 누락되었습니다.</p>')
         .replace(/(?:\\)?\{\{\s*WEATHER_HTML\s*\}\}|(?:\\)?\{\s*WEATHER_HTML\s*\}|^WEATHER_HTML$/gm, '<p class="my-2 text-gray-400 italic">날씨 정보를 불러오지 못했습니다.</p>');
 
-    // 텍스트 전처리: LLM이 평문으로 응답할 경우를 대비해 특정 패턴에 마크다운 기호 주입
+    // 텍스트 전처리
     let processedText = normalizeLegacyPlaceholders(text)
       .replace(/^\s*(##\s*)?⚠️ 공지/gm, '## ⚠️ 공지')
       .replace(/^\s*(-\s*)?현재 날씨:/gm, '- 현재 날씨:')
@@ -29,7 +40,7 @@ function MarkdownRenderer({ content }: { content: string }) {
       .replace(/^\s*(-\s*)?성분\/제형:/gm, '- 성분/제형:')
       .replace(/^\s*(-\s*)?(사용 방법:|사용 시기:|희석 배수:|사용 횟수:)/gm, '    - $2')
       .replace(/^\s*(-\s*)?([^\n\-#]+ \[(?:[^\]]+)\])$/gm, '  - $2')
-      .replace(/^-\s+-\s+/gm, '  - '); // 혹시나 '- - ' 같이 두 번 들어간 경우 방지
+      .replace(/^-\s+-\s+/gm, '  - ');
 
     const lines = processedText.split('\n');
     const result: string[] = [];
@@ -37,11 +48,9 @@ function MarkdownRenderer({ content }: { content: string }) {
     let inNestedList = false;
     let nestedLevel = 0; // 0: none, 1: '  -', 2: '    -'
     
-    // 테이블 관련 상태
     let inTable = false;
     let tableRows: string[][] = [];
 
-    // 인용문(Blockquote) 관련 상태
     let inBlockquote = false;
     let blockquoteLines: string[] = [];
 
@@ -49,8 +58,7 @@ function MarkdownRenderer({ content }: { content: string }) {
       if (!inBlockquote) return;
       result.push('<blockquote class="my-4 p-4 bg-gray-50 border-l-4 border-gray-300 rounded-r-xl italic text-gray-600 space-y-1">');
       blockquoteLines.forEach(l => {
-        // 인용문 내부의 리스트 기호 처리
-        const content = l.replace(/^-\s+/, '• ').replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+        const content = formatInline(l.replace(/^-\s+/, '• '));
         result.push(`<p>${content}</p>`);
       });
       result.push('</blockquote>');
@@ -61,28 +69,26 @@ function MarkdownRenderer({ content }: { content: string }) {
     const flushTable = () => {
       if (!inTable) return;
       if (tableRows.length < 2) {
-        // 테이블 형식이 아님 (헤더만 있거나 구분선이 없는 경우 등)
-        tableRows.forEach(row => result.push(`<p class="my-2">${row.join(' | ')}</p>`));
+        tableRows.forEach(row => result.push(`<p class="my-2">${formatInline(row.join(' | '))}</p>`));
       } else {
         result.push('<div class="my-4 overflow-x-auto rounded-xl border border-gray-200 shadow-sm">');
         result.push('<table class="min-w-full divide-y divide-gray-200 text-xs">');
         
         tableRows.forEach((row, idx) => {
-          // 구분선 행 (---) 확인
           const isSeparator = idx === 1 && row.every(cell => /^[ \-:]+$/.test(cell));
           if (isSeparator) return;
           
           if (idx === 0) {
             result.push('<thead class="bg-gray-50"><tr>');
             row.forEach(cell => {
-              const formatted = cell.trim().replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+              const formatted = formatInline(cell.trim());
               result.push(`<th class="px-4 py-3 text-left font-bold text-gray-700 uppercase tracking-wider border-b border-gray-200">${formatted}</th>`);
             });
             result.push('</tr></thead><tbody class="bg-white divide-y divide-gray-100">');
           } else {
             result.push('<tr class="hover:bg-gray-50/50 transition-colors">');
             row.forEach(cell => {
-              const formatted = cell.trim().replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+              const formatted = formatInline(cell.trim());
               result.push(`<td class="px-4 py-2.5 text-gray-600 whitespace-nowrap">${formatted}</td>`);
             });
             result.push('</tr>');
@@ -99,11 +105,10 @@ function MarkdownRenderer({ content }: { content: string }) {
       const line = lines[i];
       const nextLine = lines[i + 1] || '';
 
-      // 테이블 감지: | 로 시작하거나 포함된 줄
       const isTableLine = line.trim().startsWith('|') && line.trim().endsWith('|');
       
       if (isTableLine) {
-        if (inBlockquote) flushBlockquote(); // 인용문 도중 테이블 방지
+        if (inBlockquote) flushBlockquote();
         while (nestedLevel > 0) { result.push('</ul></li>'); nestedLevel--; }
         if (inList) { result.push('</ul>'); inList = false; }
         
@@ -115,7 +120,6 @@ function MarkdownRenderer({ content }: { content: string }) {
         flushTable();
       }
 
-      // 인용문 감지: > 로 시작하는 줄
       if (line.trim().startsWith('>')) {
         while (nestedLevel > 0) { result.push('</ul></li>'); nestedLevel--; }
         if (inList) { result.push('</ul>'); inList = false; }
@@ -128,32 +132,29 @@ function MarkdownRenderer({ content }: { content: string }) {
         flushBlockquote();
       }
 
-      // H2: ## text (공지 포함)
       if (line.startsWith('## ')) {
         while (nestedLevel > 0) { result.push('</ul></li>'); nestedLevel--; }
         if (inList) { result.push('</ul>'); inList = false; }
         const content = line.replace(/^##\s+/, '').trim();
-        result.push(`<h2 class="text-lg font-bold text-gray-800 mt-6 mb-3">${content}</h2>`);
+        result.push(`<h2 class="text-lg font-bold text-gray-800 mt-6 mb-3">${escapeHtml(content)}</h2>`);
         continue;
       }
 
-      // H3: ### text
       if (line.startsWith('### ')) {
         while (nestedLevel > 0) { result.push('</ul></li>'); nestedLevel--; }
         if (inList) { result.push('</ul>'); inList = false; }
         const content = line.replace(/^###\s+/, '').trim();
-        result.push(`<h3 class="text-base font-semibold text-gray-700 mt-4 mb-2">${content}</h3>`);
+        result.push(`<h3 class="text-base font-semibold text-gray-700 mt-4 mb-2">${escapeHtml(content)}</h3>`);
         continue;
       }
 
-      // 2단계 중첩 리스트: '    - ' (공백 4개)
       if (/^\s{4,}-\s+.+/.test(line)) {
         if (!inList) { result.push('<ul class="my-1">'); inList = true; }
         if (nestedLevel === 0) { result.push('<li class="text-gray-800"><ul class="pl-4 mt-1 space-y-1">'); nestedLevel = 1; }
         if (nestedLevel === 1) { result.push('<li class="text-gray-800"><ul class="pl-4 mt-1 space-y-1 border-l-2 border-gray-100 ml-1">'); nestedLevel = 2; }
         
         const content = line.replace(/^\s{4,}-\s+/, '').trim();
-        const formatted = content.replace(/\*\*(.+?)\*\*/g, '<strong class="font-semibold">$1</strong>');
+        const formatted = formatInline(content);
         result.push(`<li class="text-gray-800 text-sm pl-4 relative before:content-[''] before:absolute before:-left-1 before:top-2 before:w-1 before:h-1 before:bg-gray-800 before:rounded-sm">${formatted}</li>`);
 
         if (!/^\s{4,}-\s+.+/.test(nextLine)) {
@@ -163,14 +164,13 @@ function MarkdownRenderer({ content }: { content: string }) {
         continue;
       }
 
-      // 1단계 중첩 리스트: '  - ' (공백 2개)
       if (/^\s{2,3}-\s+.+/.test(line)) {
         if (!inList) { result.push('<ul class="my-1">'); inList = true; }
         while (nestedLevel > 1) { result.push('</ul></li>'); nestedLevel--; }
         if (nestedLevel === 0) { result.push('<li class="text-gray-800"><ul class="pl-4 mt-1 space-y-1">'); nestedLevel = 1; }
         
         const content = line.replace(/^\s{2,3}-\s+/, '').trim();
-        const formatted = content.replace(/\*\*(.+?)\*\*/g, '<strong class="font-semibold">$1</strong>');
+        const formatted = formatInline(content);
         result.push(`<li class="text-gray-800 font-medium pl-3 mt-2 relative before:content-[''] before:absolute before:left-0 before:top-2 before:w-1.5 before:h-1.5 before:border before:border-gray-800 before:rounded-full before:bg-transparent">${formatted}</li>`);
 
         if (!/^\s{2,}-\s+.+/.test(nextLine)) {
@@ -180,13 +180,12 @@ function MarkdownRenderer({ content }: { content: string }) {
         continue;
       }
 
-      // 일반 리스트: '- '
       if (/^-\s+.+/.test(line)) {
         while (nestedLevel > 0) { result.push('</ul></li>'); nestedLevel--; }
         if (!inList) { result.push('<ul class="my-1 pl-4 list-none space-y-1">'); inList = true; }
         
         const content = line.replace(/^-\s+/, '').trim();
-        const formatted = content.replace(/\*\*(.+?)\*\*/g, '<strong class="font-semibold">$1</strong>');
+        const formatted = formatInline(content);
         result.push(`<li class="text-gray-800 mt-2 relative before:content-[''] before:absolute before:-left-3 before:top-2 before:w-1.5 before:h-1.5 before:bg-gray-800 before:rounded-full">${formatted}</li>`);
 
         if (!/^\s*-\s+.+/.test(nextLine)) {
@@ -196,20 +195,11 @@ function MarkdownRenderer({ content }: { content: string }) {
         continue;
       }
 
-      // HTML 태그 (CSS 카드 형태 등)
-      if (line.trim().startsWith('<')) {
-        while (nestedLevel > 0) { result.push('</ul></li>'); nestedLevel--; }
-        if (inList) { result.push('</ul>'); inList = false; }
-        const formatted = line.replace(/\*\*(.+?)\*\*/g, '<strong class="font-semibold">$1</strong>');
-        result.push(formatted);
-        continue;
-      }
-
-      // 일반 텍스트
+      // 일반 텍스트 (기존 HTML 허용 경로 제거 - XSS 방지)
       if (line.trim()) {
         while (nestedLevel > 0) { result.push('</ul></li>'); nestedLevel--; }
         if (inList) { result.push('</ul>'); inList = false; }
-        const formatted = line.replace(/\*\*(.+?)\*\*/g, '<strong class="font-semibold">$1</strong>');
+        const formatted = formatInline(line);
         result.push(`<p class="my-2">${formatted}</p>`);
       } else if (i > 0 && lines[i - 1].trim()) {
         if (lines[i-1].trim() !== '') {

@@ -17,10 +17,10 @@ class Settings(BaseSettings):
     # ── 데이터베이스 ────────────────────────────────────────────────────────
     # 데이터베이스 (PostgreSQL)
     DATABASE_URL: str = ""
-    DB_POOL_SIZE: int = 0
-    DB_MAX_OVERFLOW: int = 0
-    DB_POOL_TIMEOUT: int = 0
-    DB_POOL_RECYCLE: int = 0
+    DB_POOL_SIZE: int = 5
+    DB_MAX_OVERFLOW: int = 10
+    DB_POOL_TIMEOUT: int = 30
+    DB_POOL_RECYCLE: int = 1800
 
     # 벡터 데이터베이스 (ChromaDB)
     CHROMA_DB_PATH: str = ""
@@ -76,7 +76,7 @@ class Settings(BaseSettings):
     OLLAMA_REMOTE_URL: str = ""
 
     EMBED_MODEL: str = ""
-    EMBED_DIM: int = 0
+    EMBED_DIM: int = 1024
 
     # LLM 리즈닝 강도 (GPT-5 계열 reasoning 모델용)
     # minimal | low | medium | high  또는 "none"(파라미터 미전송)
@@ -84,13 +84,13 @@ class Settings(BaseSettings):
     LLM_REASONING_EFFORT: str = ""
 
     # Review Embedding (LiteLLM 프록시 경유, VoyageAI 등)
-    REVIEW_ANALYSIS_BATCH_SIZE: int = 0
-    REVIEW_ANALYSIS_MAX_RETRIES: int = 0
+    REVIEW_ANALYSIS_BATCH_SIZE: int = 40
+    REVIEW_ANALYSIS_MAX_RETRIES: int = 2
 
     # ── AI Agent (IoT 제어) ──────────────────────────────────────────────────
     AI_AGENT_MODEL: str = ""
-    AI_AGENT_LLM_INTERVAL: int = 0
-    AI_AGENT_RULE_INTERVAL: int = 0
+    AI_AGENT_LLM_INTERVAL: int = 300
+    AI_AGENT_RULE_INTERVAL: int = 30
 
     # IoT Relay Server Bridge
     # AI Agent Action History Bridge (Relay → FarmOS 미러)
@@ -101,17 +101,17 @@ class Settings(BaseSettings):
     IOT_RELAY_BASE_URL: str = ""
     IOT_RELAY_API_KEY: str = ""
     AI_AGENT_BRIDGE_ENABLED: bool = False
-    AI_AGENT_MIRROR_TTL_DAYS: int = 0
-    AI_AGENT_BACKFILL_PAGE_SIZE: int = 0
+    AI_AGENT_MIRROR_TTL_DAYS: int = 30
+    AI_AGENT_BACKFILL_PAGE_SIZE: int = 200
 
     # 센서 임계값
-    SOIL_MOISTURE_LOW: float = 0.0
-    SOIL_MOISTURE_HIGH: float = 00.0
+    SOIL_MOISTURE_LOW: float = 55.0
+    SOIL_MOISTURE_HIGH: float = 70.0
 
     # ── 기타 설정 ────────────────────────────────────────────────────────────
     # 농장 위치 (기상청 격자좌표 기본값)
-    FARM_NX: int = 0
-    FARM_NY: int = 0
+    FARM_NX: int = 84
+    FARM_NY: int = 106
 
     # 한글 폰트 (PDF 생성용) — 저장소에 번들된 Pretendard(SIL OFL 1.1) 기본 사용.
     # 시스템 폰트 사용하려면 .env에서 절대 경로로 오버라이드 가능.

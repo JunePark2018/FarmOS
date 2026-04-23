@@ -9,18 +9,14 @@ from app.paths import BACKEND_ROOT
 class Settings(BaseSettings):
     # ── 데이터베이스 ────────────────────────────────────────────────────────
     # PostgreSQL 연결 주소 (driver://user:pass@host:port/dbname)
-    database_url: str = "postgresql+psycopg2://postgres:postgres@localhost:5432/farmos"
+    database_url: str = ""
 
     # ── 보안 및 인증 ────────────────────────────────────────────────────────
     # JWT 시크릿 키 (FarmOS 백엔드와 반드시 동일해야 함 — 공유 인증)
     jwt_secret_key: str = ""
     
     # CORS 허용 도메인 (JSON 배열 형식으로 작성하거나 * 사용 가능)
-    allow_origins: list[str] = [
-        "http://localhost:5173",
-        "http://localhost:5174",
-        "http://localhost:5175"
-    ]
+    allow_origins: list[str] = []
 
     # ── 외부 API 연동 ───────────────────────────────────────────────────────
     # FarmOS 백엔드 연동 주소 (공유 인증 및 데이터 조회용)
@@ -64,7 +60,7 @@ class Settings(BaseSettings):
 
     # ── 에이전트 설정 ───────────────────────────────────────────────────────
     # 에이전트 최대 반복 횟수
-    agent_max_iterations: int = 0
+    agent_max_iterations: int = 10
     
     # true → SupervisorExecutor (멀티 에이전트 + LangGraph OrderGraph)
     # false → 기존 단일 AgentExecutor

@@ -202,7 +202,7 @@ async def add_chat_message(
         model_name = settings.LITELLM_MODEL
 
         ai_reply = "API 키가 없어 답변할 수 없습니다."
-        if api_key and api_key != "dummy":
+        if api_key:
             try:
                 # async with 블록을 사용하여 커넥션 누수 방지
                 async with httpx.AsyncClient(
