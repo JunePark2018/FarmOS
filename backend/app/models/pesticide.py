@@ -33,6 +33,7 @@ class PesticideProduct(Base):
     dilution_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     max_use_count_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     formulation_name: Mapped[str | None] = mapped_column(Text, nullable=True)
+    usage_purpose_name: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # N:1 관계 (여러 제품 문서가 하나의 등록 정보에 연결될 수 있음)
     details: Mapped["PesticideApplication"] = relationship(back_populates="document_entry")
