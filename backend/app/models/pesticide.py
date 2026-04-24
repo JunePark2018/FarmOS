@@ -1,6 +1,8 @@
 """농약 검색/매칭용 모델."""
 
-from sqlalchemy import Integer, String, Text, ForeignKey
+from datetime import datetime, timezone
+
+from sqlalchemy import DateTime, Integer, String, Text, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -38,10 +40,26 @@ class PesticideProduct(Base):
 
 class PesticideApplication(Base):
     """`rag_pesticide_product_applications` (실제 농약 등록 정보 원본)."""
-    
+
     __tablename__ = "rag_pesticide_product_applications"
 
     application_id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    
+
     # 1:N 관계 (하나의 등록 정보에 여러 RAG 문서가 매달릴 수 있음)
     document_entry: Mapped[list["PesticideProduct"]] = relationship(back_populates="details")
+
+
+class PesticideDataVersion(Base):
+    """번들 농약 JSON 스냅샷의 DB 적재 이력.
+
+    번들 파일의 VERSION.txt 값과 비교하여 부팅 시 자동 재시드 여부를 판단.
+    """
+
+    __tablename__ = "rag_pesticide_version"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    version: Mapped[str] = mapped_column(String(64), nullable=False)  # 예: "2026-04-24_54836"
+    seeded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+    )

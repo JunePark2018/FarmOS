@@ -139,6 +139,13 @@ async def lifespan(app: FastAPI):
         # UPSTAGE_API_KEY 미설정·네트워크 오류·모델 로드 실패 등 — 서버 기동은 계속
         _log.warning(f"공익직불 RAG 준비 실패 (/subsidy/ask 제한 동작): {e}")
 
+    # 농약 DB 자동 시드 — 번들 VERSION 이 DB 버전보다 새로우면 백그라운드 시드
+    try:
+        from app.core.pesticide_autoseed import schedule_pesticide_autoseed
+        schedule_pesticide_autoseed()
+    except Exception as e:
+        _log.warning(f"농약 DB 자동 시드 스케줄 실패: {e}")
+
     yield
 
     if bridge is not None:

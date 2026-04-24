@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import gzip
 import hashlib
 import json
 import os
@@ -52,7 +53,7 @@ NULL_LIKE_VALUES = {"", "-", "--", "N/A", "None", None}
 DATE_RE = re.compile(r"^(\d{4})(\d{2})(\d{2})$")
 WHITESPACE_RE = re.compile(r"\s+")
 PAREN_CONTENT_RE = re.compile(r"\([^)]*\)")
-RESULT_FILE_PATTERN = re.compile(r"^(?P<start>\d+)-(?P<end>\d+)\.json$")
+RESULT_FILE_PATTERN = re.compile(r"^(?P<start>\d+)-(?P<end>\d+)\.json(?:\.gz)?$")
 USE_COUNT_RE = re.compile(r"(\d+)")
 DILUTION_RE = re.compile(r"(\d+(?:,\d+)?)")
 LEGACY_TABLE_NAMES = [
@@ -463,11 +464,19 @@ def infer_target_kind(target_name: str) -> str:
 
 
 def collect_source_files(input_dir: Path, glob_pattern: str) -> list[Path]:
-    return sorted(path for path in input_dir.rglob(glob_pattern) if path.is_file())
+    # .json과 .json.gz 둘 다 수집
+    matches: set[Path] = set()
+    for pat in (glob_pattern, glob_pattern + ".gz"):
+        matches.update(p for p in input_dir.rglob(pat) if p.is_file())
+    return sorted(matches)
 
 
 def load_rows(source_file: Path) -> list[dict[str, Any]]:
-    payload = json.loads(source_file.read_text(encoding="utf-8"))
+    if source_file.suffix == ".gz":
+        with gzip.open(source_file, "rt", encoding="utf-8") as f:
+            payload = json.load(f)
+    else:
+        payload = json.loads(source_file.read_text(encoding="utf-8"))
     dataset = payload.get(SERVICE_ID)
     if not isinstance(dataset, dict):
         raise RuntimeError(f"{source_file} 에 `{SERVICE_ID}` 객체가 없습니다.")
