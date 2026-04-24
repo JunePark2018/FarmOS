@@ -2,13 +2,14 @@
 
 from datetime import date
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.core import journal_store
 from app.core.journal_parser import parse_stt_text
+from app.core.pesticide_candidates import build_whisper_prompt
 from app.core.stt import transcribe_audio
 from app.models.user import User
 from app.schemas.journal import (
@@ -27,22 +28,41 @@ router = APIRouter(prefix="/journal", tags=["journal"])
 @router.post("/transcribe")
 async def transcribe(
     file: UploadFile = File(...),
+    field_name: str | None = Form(default=None),
+    crop: str | None = Form(default=None),
     current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
-    """오디오 파일을 Groq Whisper로 전사하여 텍스트 반환."""
+    """오디오 파일을 Groq Whisper로 전사하여 텍스트 반환.
+
+    field_name/crop이 있으면 농약 후보 기반 Whisper prompt를 생성해 전사 정확도를 높임.
+    """
     try:
         audio_bytes = await file.read()
         if not audio_bytes:
             raise HTTPException(400, "빈 오디오 파일입니다.")
+
+        whisper_prompt: str | None = None
+        try:
+            built = await build_whisper_prompt(
+                db, crop=crop, top_n=30, user_id=current_user.id
+            )
+            whisper_prompt = built or None
+        except Exception:
+            whisper_prompt = None  # 힌트 실패해도 전사는 진행
+
         text = await transcribe_audio(
             audio_bytes,
             filename=file.filename or "audio.webm",
             content_type=file.content_type or "audio/webm",
+            prompt=whisper_prompt,
         )
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(502, f"STT 전사 실패: {e}")
+    # 디버깅용 컨텍스트는 로그에만 (응답에는 포함 안 함)
+    _ = field_name
     return {"text": text}
 
 
@@ -57,7 +77,12 @@ async def parse_stt(
     entries 배열 각각에 대해 퍼지 매칭 포함 보정을 수행.
     """
     try:
-        result = await parse_stt_text(body.raw_text)
+        result = await parse_stt_text(
+            body.raw_text,
+            field_name=body.field_name,
+            crop=body.crop,
+            db=db,
+        )
     except Exception as e:
         import traceback
 

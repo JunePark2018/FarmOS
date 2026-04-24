@@ -129,6 +129,9 @@ class STTParseRequest(BaseModel):
     """STT 텍스트 파싱 요청."""
 
     raw_text: str = Field(min_length=1, max_length=2000)
+    # 현재 선택된 필지/작목 컨텍스트 — 농약 후보 선정에 활용 (Phase 3)
+    field_name: str | None = Field(default=None, max_length=100)
+    crop: str | None = Field(default=None, max_length=50)
 
 
 class STTParseResponse(BaseModel):

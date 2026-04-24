@@ -4,8 +4,10 @@ import json
 from datetime import date, timedelta
 
 import httpx
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.pesticide_candidates import build_llm_candidates
 
 SYSTEM_PROMPT = """당신은 한국어 영농일지 음성 텍스트를 구조화된 JSON으로 변환하는 파서입니다.
 
@@ -156,20 +158,57 @@ def _compute_unparsed(parsed: dict, raw_text: str) -> str:
     return remaining
 
 
-async def parse_stt_text(raw_text: str) -> dict:
+def _build_pesticide_hint(candidates: list[str]) -> str | None:
+    """농약 후보 리스트를 system 메시지용 힌트 블록으로 변환."""
+    if not candidates:
+        return None
+    joined = ", ".join(candidates)
+    return (
+        "== 농약 후보 (사용자 맥락에서 자주 쓰이는 농약) ==\n"
+        "입력에서 언급된 농약이 아래 후보 중 하나와 의미적으로 일치하면 "
+        "정확한 표기로 교정해 usage_pesticide_product에 사용하세요.\n"
+        "규칙:\n"
+        "- 후보에 없는 농약명이면 절대 후보 내 제품으로 강제 교체하지 말고 원문 그대로 유지하세요.\n"
+        "- 발음이 비슷하지만 후보에 없는 새 농약은 그대로 두세요 (사용자가 직접 확인).\n"
+        f"후보 목록: {joined}"
+    )
+
+
+async def parse_stt_text(
+    raw_text: str,
+    field_name: str | None = None,
+    crop: str | None = None,
+    db: AsyncSession | None = None,
+) -> dict:
     """STT 텍스트를 OpenRouter LLM으로 구조화.
+
+    field_name/crop은 현재 선택된 필지/작목 컨텍스트.
+    db가 주어지면 crop 기반으로 농약 후보를 조회해 LLM 프롬프트에 힌트로 주입.
 
     Returns:
         {"parsed": {...}, "confidence": {...}, "unparsed_text": "..."}
     """
+    _ = field_name  # 현재는 농약 힌트에 crop만 사용
+
+    messages = [{"role": "system", "content": _build_system_prompt()}]
+
+    # 농약 힌트 생성 (실패해도 파싱은 계속)
+    if db is not None:
+        try:
+            candidates = await build_llm_candidates(db, crop=crop, top_n=80)
+            hint = _build_pesticide_hint(candidates)
+            if hint:
+                messages.append({"role": "system", "content": hint})
+        except Exception:
+            pass
+
+    messages.append({"role": "user", "content": raw_text})
+
     url = f"{settings.LITELLM_URL}/chat/completions"
     headers = {"Authorization": f"Bearer {settings.LITELLM_API_KEY}"}
     payload = {
         "model": settings.LITELLM_MODEL,
-        "messages": [
-            {"role": "system", "content": _build_system_prompt()},
-            {"role": "user", "content": raw_text},
-        ],
+        "messages": messages,
         "temperature": 0.1,
         "max_tokens": 2048,
     }

@@ -171,32 +171,48 @@ async def _search(
     return None
 
 
+# 신뢰도가 이 값 미만이면 원문 유지 (과잉 보정 방어)
+MATCH_CONFIDENCE_THRESHOLD = 0.5
+
+
 async def enrich_with_pesticide_match(db: AsyncSession, parse_result: dict) -> dict:
-    """파싱 결과에 농약 매칭 정보를 추가하는 후처리 함수."""
+    """파싱 결과에 농약 매칭 정보를 추가하는 후처리 함수.
+
+    임계값 미만 매칭은 원문 유지하고 uncertain 플래그를 붙여 UI가 사용자 확인을 유도하게 함.
+    """
     parsed = parse_result.get("parsed", {})
     pesticide_name = parsed.get("usage_pesticide_product")
 
     if not pesticide_name:
         return parse_result
 
-    # 작물 + 병해충 정보를 매칭 힌트로 활용
+    raw_name = pesticide_name
     crop = parsed.get("crop")
     disease = parsed.get("disease")
 
     match = await match_pesticide(db, pesticide_name, crop=crop, disease=disease)
 
-    if match:
+    confidence = parse_result.get("confidence", {})
+
+    if match and match["confidence"] >= MATCH_CONFIDENCE_THRESHOLD:
+        # 고신뢰도 매칭 — 정규화된 공식 제품명으로 교체
         parsed["usage_pesticide_product"] = match["matched_name"]
         parse_result["parsed"] = parsed
-
-        confidence = parse_result.get("confidence", {})
         confidence["usage_pesticide_product"] = match["confidence"]
-        parse_result["confidence"] = confidence
-
-        parse_result["pesticide_match"] = match
-    else:
-        confidence = parse_result.get("confidence", {})
+        parse_result["pesticide_match"] = {**match, "raw_name": raw_name, "uncertain": False}
+    elif match:
+        # 저신뢰도 매칭 — 원문 유지, 후보 정보는 참고용으로 보존
+        confidence["usage_pesticide_product"] = match["confidence"]
         confidence["usage_pesticide_product_verified"] = False
-        parse_result["confidence"] = confidence
+        parse_result["pesticide_match"] = {
+            **match,
+            "raw_name": raw_name,
+            "uncertain": True,
+        }
+    else:
+        # 매칭 실패 — 원문 유지, unverified 표시
+        confidence["usage_pesticide_product_verified"] = False
+        parse_result["pesticide_match"] = {"raw_name": raw_name, "uncertain": True}
 
+    parse_result["confidence"] = confidence
     return parse_result

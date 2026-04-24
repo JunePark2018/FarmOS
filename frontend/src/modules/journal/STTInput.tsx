@@ -11,8 +11,15 @@ import type { STTParseResult } from "@/types";
 
 interface Props {
   onParsed: (result: STTParseResult) => void;
-  parseSTT: (rawText: string) => Promise<STTParseResult>;
-  transcribeAudio: (blob: Blob) => Promise<string | null>;
+  parseSTT: (
+    rawText: string,
+    context?: { field_name?: string; crop?: string },
+  ) => Promise<STTParseResult>;
+  transcribeAudio: (
+    blob: Blob,
+    context?: { field_name?: string; crop?: string },
+  ) => Promise<string | null>;
+  sttContext?: { field_name?: string; crop?: string };
 }
 
 export type STTStatus = "idle" | "recording" | "transcribing" | "parsing";
@@ -41,7 +48,7 @@ function pickMimeType(): string {
 }
 
 const STTInput = forwardRef<STTInputHandle, Props>(function STTInput(
-  { onParsed, parseSTT, transcribeAudio },
+  { onParsed, parseSTT, transcribeAudio, sttContext },
   ref,
 ) {
   const [status, setStatus] = useState<STTStatus>("idle");
@@ -117,7 +124,7 @@ const STTInput = forwardRef<STTInputHandle, Props>(function STTInput(
         setStatus("transcribing");
         setProgress(10);
         startInterp(15, 55, 12000);
-        const text = await transcribeAudio(blob);
+        const text = await transcribeAudio(blob, sttContext);
         stopInterp();
         if (cancelledRef.current) {
           setProgress(0);
@@ -134,7 +141,7 @@ const STTInput = forwardRef<STTInputHandle, Props>(function STTInput(
         // 2) LLM 파싱 요청 → 응답
         setStatus("parsing");
         startInterp(62, 95, 18000);
-        const result = await parseSTT(text);
+        const result = await parseSTT(text, sttContext);
         stopInterp();
         if (cancelledRef.current) {
           setProgress(0);
@@ -155,7 +162,7 @@ const STTInput = forwardRef<STTInputHandle, Props>(function STTInput(
         throw e;
       }
     },
-    [transcribeAudio, parseSTT, onParsed, startInterp, stopInterp],
+    [transcribeAudio, parseSTT, onParsed, startInterp, stopInterp, sttContext],
   );
 
   const handleBusyCancel = useCallback(() => {

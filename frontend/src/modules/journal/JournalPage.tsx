@@ -120,7 +120,13 @@ export default function JournalPage() {
       allEntries[currentEntryIdx] = data;
       let okCount = 0;
       for (const e of allEntries) {
-        const r = await createEntry({ ...e, source: "stt" });
+        // 서버 스키마에 없는 메타 필드(_pesticide_uncertain 등) 제거
+        const { _pesticide_uncertain: _u, ...cleanEntry } = e as Record<
+          string,
+          unknown
+        >;
+        void _u;
+        const r = await createEntry({ ...cleanEntry, source: "stt" });
         if (r) okCount += 1;
       }
       if (okCount === allEntries.length) {
@@ -178,9 +184,13 @@ export default function JournalPage() {
       return;
     }
 
-    const entries = result.entries.map(
-      (e) => e.parsed as Record<string, unknown>,
-    );
+    const entries = result.entries.map((e) => {
+      const match = e.pesticide_match as { uncertain?: boolean } | null;
+      return {
+        ...(e.parsed as Record<string, unknown>),
+        _pesticide_uncertain: Boolean(match?.uncertain),
+      };
+    });
 
     if (entries.length === 1) {
       toast.success("음성이 분석되었습니다. 확인 후 저장하세요.");
@@ -302,6 +312,11 @@ export default function JournalPage() {
         onParsed={handleSTTParsed}
         parseSTT={parseSTT}
         transcribeAudio={transcribeAudio}
+        sttContext={
+          entries.length > 0
+            ? { field_name: entries[0].field_name, crop: entries[0].crop }
+            : undefined
+        }
       />
 
       {/* 폼 모달 (생성/수정 공용) */}
@@ -372,6 +387,10 @@ export default function JournalPage() {
                   sttEntries.length > 1
                     ? `전체 ${sttEntries.length}건 등록`
                     : undefined
+                }
+                pesticideUncertain={
+                  !editingEntry &&
+                  Boolean(sttPrefill?._pesticide_uncertain)
                 }
               />
             </div>

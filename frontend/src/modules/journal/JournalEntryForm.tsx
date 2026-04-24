@@ -24,6 +24,7 @@ interface Props {
   onRequestRecord?: () => void;
   submitLabel?: string;
   headerSlot?: React.ReactNode;
+  pesticideUncertain?: boolean;
 }
 
 const JournalEntryForm = forwardRef<JournalEntryFormHandle, Props>(
@@ -36,6 +37,7 @@ const JournalEntryForm = forwardRef<JournalEntryFormHandle, Props>(
       onRequestRecord,
       submitLabel,
       headerSlot,
+      pesticideUncertain = false,
     },
     ref,
   ) {
@@ -195,15 +197,27 @@ const JournalEntryForm = forwardRef<JournalEntryFormHandle, Props>(
           {showChemicals && (
             <div className="mt-3 grid grid-cols-2 gap-3 p-3 bg-gray-50 rounded-lg">
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">
+                <label className="flex items-center gap-1 text-xs font-medium text-gray-500 mb-1">
                   농약 제품명
+                  {pesticideUncertain && (
+                    <span
+                      className="px-1.5 py-0.5 rounded bg-yellow-100 text-yellow-700 text-[10px] font-semibold"
+                      title="음성 인식된 농약이 DB와 정확히 일치하지 않습니다. 제품명을 한번 더 확인해주세요."
+                    >
+                      확인 필요
+                    </span>
+                  )}
                 </label>
                 <input
                   type="text"
                   value={usagePesticideProduct}
                   onChange={(e) => setUsagePesticideProduct(e.target.value)}
                   placeholder="예: 프로피네브 수화제"
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  className={`w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 ${
+                    pesticideUncertain
+                      ? "border-yellow-300 bg-yellow-50 focus:ring-yellow-300/40"
+                      : "border-gray-200 focus:ring-primary/30"
+                  }`}
                 />
               </div>
               <div>

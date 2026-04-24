@@ -122,7 +122,10 @@ export function useJournalData() {
   }, []);
 
   const transcribeAudio = useCallback(
-    async (blob: Blob): Promise<string | null> => {
+    async (
+      blob: Blob,
+      context?: { field_name?: string; crop?: string },
+    ): Promise<string | null> => {
       try {
         const form = new FormData();
         const ext = blob.type.includes("ogg")
@@ -131,6 +134,8 @@ export function useJournalData() {
             ? "mp4"
             : "webm";
         form.append("file", blob, `audio.${ext}`);
+        if (context?.field_name) form.append("field_name", context.field_name);
+        if (context?.crop) form.append("crop", context.crop);
         const res = await fetch(`${API_BASE}/journal/transcribe`, {
           ...opts,
           method: "POST",
@@ -147,13 +152,20 @@ export function useJournalData() {
   );
 
   const parseSTT = useCallback(
-    async (rawText: string): Promise<STTParseResult> => {
+    async (
+      rawText: string,
+      context?: { field_name?: string; crop?: string },
+    ): Promise<STTParseResult> => {
       try {
         const res = await fetch(`${API_BASE}/journal/parse-stt`, {
           ...opts,
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ raw_text: rawText }),
+          body: JSON.stringify({
+            raw_text: rawText,
+            field_name: context?.field_name,
+            crop: context?.crop,
+          }),
         });
         if (!res.ok) {
           let detail = `파싱 실패 (${res.status})`;
