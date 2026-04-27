@@ -310,7 +310,7 @@ export default function DiagnosisChatPage() {
   }, [messages, isTyping]);
 
   const handleSend = async () => {
-    if (!inputValue.trim() || !context?.id) return;
+    if (!inputValue.trim() || !context?.id || isTyping) return;
     
     const userContent = inputValue;
     setInputValue('');
@@ -494,14 +494,17 @@ export default function DiagnosisChatPage() {
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             onKeyPress={(e) => e.key === 'Enter' && handleSend()}
-            placeholder="추가 질문을 입력하세요..."
-            className="flex-1 bg-gray-100 border-none rounded-2xl py-3.5 px-5 text-sm focus:ring-2 focus:ring-primary/20 outline-none transition-all"
+            disabled={isTyping}
+            placeholder={isTyping ? "진단봇의 답변을 기다리는 중..." : "추가 질문을 입력하세요..."}
+            className={`flex-1 bg-gray-100 border-none rounded-2xl py-3.5 px-5 text-sm focus:ring-2 focus:ring-primary/20 outline-none transition-all ${
+              isTyping ? 'opacity-50 cursor-not-allowed' : ''
+            }`}
           />
           <button
             onClick={handleSend}
-            disabled={!inputValue.trim()}
+            disabled={!inputValue.trim() || isTyping}
             className={`p-3.5 rounded-xl transition-all ${
-              inputValue.trim() ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'bg-gray-200 text-gray-400'
+              inputValue.trim() && !isTyping ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'bg-gray-200 text-gray-400 cursor-not-allowed'
             }`}
           >
             <MdSend className="text-xl" />
