@@ -1,5 +1,5 @@
 """공통 픽스처."""
-import copy
+import os
 from unittest.mock import MagicMock
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -8,58 +8,24 @@ KST = ZoneInfo("Asia/Seoul")
 
 import pytest
 
-from ai.agent import AgentClient, AgentResponse, AgentUnavailableError, ToolCall, TOOL_DEFINITIONS
 
+# ── LangSmith 트레이싱 차단 ────────────────────────────────────────────────────
 
-# ── 테스트용 AgentClient 구현 ────────────────────────────────────────────────
+@pytest.fixture(autouse=True, scope="session")
+def disable_langsmith_tracing():
+    """테스트 실행 중 LangSmith 트레이싱을 비활성화합니다.
 
-class FakeAgentClient(AgentClient):
-    """시나리오 기반 AgentClient 스텁.
-
-    responses 리스트를 순서대로 반환하며, AgentUnavailableError를 포함시키면
-    해당 호출에서 예외를 발생시킵니다.
+    LANGCHAIN_TRACING_V2=true 환경에서 pytest를 돌리면 FakeRAGService·FakeLLM 등
+    테스트 스텁의 호출이 LangSmith에 실제 트레이스로 기록됩니다.
+    이 픽스처는 세션 전체에서 트레이싱을 끄고 세션 종료 시 원래 값으로 복원합니다.
     """
-
-    def __init__(self, responses: list):
-        self._responses = iter(responses)
-        self.calls: list[list[dict]] = []  # chat_with_tools 호출당 messages 스냅샷
-
-    async def chat_with_tools(
-        self, messages: list[dict], tools: list[dict], system: str
-    ) -> AgentResponse:
-        self.calls.append(list(messages))
-        resp = next(self._responses)
-        if isinstance(resp, AgentUnavailableError):
-            raise resp
-        return resp
-
-    def add_tool_results(
-        self,
-        messages: list[dict],
-        response: AgentResponse,
-        results: list[tuple[ToolCall, str]],
-    ) -> None:
-        """테스트용 단순 포맷 (Ollama 스타일)."""
-        messages.append({"role": "assistant", "content": response.text or ""})
-        for _, result in results:
-            messages.append({"role": "tool", "content": result})
-
-    async def is_available(self) -> bool:
-        return True
-
-
-def make_text_response(text: str) -> AgentResponse:
-    """도구 호출 없는 최종 텍스트 응답."""
-    return AgentResponse(text=text, tool_calls=[])
-
-
-def make_tool_response(*tool_calls: tuple[str, dict]) -> AgentResponse:
-    """도구 호출 응답. (name, args) 튜플 가변 인자."""
-    calls = [
-        ToolCall(id=f"tc_{i}", name=name, arguments=args)
-        for i, (name, args) in enumerate(tool_calls)
-    ]
-    return AgentResponse(text=None, tool_calls=calls)
+    _original = os.environ.get("LANGCHAIN_TRACING_V2")
+    os.environ["LANGCHAIN_TRACING_V2"] = "false"
+    yield
+    if _original is None:
+        os.environ.pop("LANGCHAIN_TRACING_V2", None)
+    else:
+        os.environ["LANGCHAIN_TRACING_V2"] = _original
 
 
 # ── RAG 서비스 목 ─────────────────────────────────────────────────────────────
@@ -95,6 +61,26 @@ class FakeRAGService:
                 if doc not in seen:
                     seen.add(doc)
                     docs.append(doc)
+        return docs
+
+    def hybrid_retrieve(
+        self,
+        question: str,
+        collections: list[str],
+        top_k: int = 5,
+        distance_threshold: float = 0.5,
+        rrf_k: int = 60,
+    ) -> list[str]:
+        """Dense + Sparse 하이브리드 검색 스텁 — collection 결과를 top_k까지 합산."""
+        docs = []
+        seen = set()
+        for col in collections:
+            for doc in self._results.get(col, []):
+                if doc not in seen:
+                    seen.add(doc)
+                    docs.append(doc)
+                if len(docs) >= top_k:
+                    return docs
         return docs
 
 
@@ -143,6 +129,10 @@ def make_mock_db(orders=None, shipments=None, products=None, chat_session=None):
     )
     # filter().all() → orders (단순 조회)
     order_mock.filter.return_value.all.return_value = orders or []
+    # filter().count() → 전체 주문 수
+    order_mock.filter.return_value.count.return_value = len(orders or [])
+    # filter().filter().count() → order_id 추가 필터 시 주문 수
+    order_mock.filter.return_value.filter.return_value.count.return_value = len(orders or [])
 
     # ── Shipment 체인 ──────────────────────────────────────────────
     # filter().first() → 첫 번째 shipment
@@ -231,9 +221,14 @@ def make_product(
 
 # ── 공통 픽스처 ──────────────────────────────────────────────────────────────
 
-@pytest.fixture
-def tools():
-    return copy.deepcopy(TOOL_DEFINITIONS)
+@pytest.fixture(autouse=True)
+def disable_reranker(monkeypatch):
+    """테스트에서 Reranker 모델 다운로드 의존성 제거.
+
+    settings.reranker_model을 빈 문자열로 오버라이드하면
+    rerank()가 즉시 docs[:top_k]를 반환하여 CrossEncoder 로드를 건너뜁니다.
+    """
+    monkeypatch.setattr("ai.rag.settings.reranker_model", "")
 
 
 @pytest.fixture
