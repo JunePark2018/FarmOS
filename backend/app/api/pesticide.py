@@ -6,6 +6,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.deps import get_current_user
+from app.core.pesticide_crawl_service import (
+    get_crawl_status,
+    trigger_crawl,
+)
 from app.core.pesticide_sync import get_pesticide_count, sync_pesticides
 from app.models.pesticide import PesticideProduct
 from app.models.user import User
@@ -76,3 +80,45 @@ async def pesticide_count(
     """현재 DB에 캐싱된 농약 제품 수."""
     count = await get_pesticide_count(db)
     return {"count": count}
+
+
+# ── 수동 크롤링 트리거 (자동 크롤링은 일절 없음) ────────────────────────
+
+
+@router.post("/crawl", status_code=202)
+async def start_pesticide_crawl(
+    current_user: User = Depends(get_current_user),
+):
+    """식약처 농약 API 크롤링을 백그라운드로 시작.
+
+    - 자동 발동 없음. 이 엔드포인트 호출이 유일한 트리거.
+    - 약 1시간 소요 (60초 간격 × ~55 배치)
+    - 완료 시 backend/data/pesticide/ 의 .gz 번들 + VERSION.txt 자동 갱신
+    - 다음 서버 재시작 시 autoseed 가 새 데이터를 PostgreSQL 에 적재
+    - 동시 실행 방지 — 진행 중이면 409 반환
+    """
+    result = await trigger_crawl()
+    if not result["started"]:
+        raise HTTPException(
+            status_code=409,
+            detail={"message": "크롤링을 시작할 수 없습니다.", **result},
+        )
+    return {
+        "status": "started",
+        "started_at": result["started_at"],
+        "estimated_duration": "약 1시간",
+        "next_step": "완료 후 서버 재시작 시 autoseed 가 자동 적재",
+        "status_endpoint": "/api/v1/pesticide/crawl/status",
+    }
+
+
+@router.get("/crawl/status")
+async def pesticide_crawl_status(
+    current_user: User = Depends(get_current_user),
+):
+    """현재 농약 크롤링 진행 상태 조회.
+
+    Returns:
+        running, started_at, finished_at, phase, returncode, error_tail, result
+    """
+    return get_crawl_status()
