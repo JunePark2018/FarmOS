@@ -17,12 +17,14 @@ const CROPS = [
   "감자", "고추", "들깨", "무", "배추", "벼", "양배추", "오이", "옥수수", "콩", "토마토", "파"
 ];
 
+// 모델의 분류 어휘 (WizWix/kor-pest-detector evaluation/metrics.json) 와 1:1 정렬.
+// "정상" 은 UX 편의상 맨 앞으로 호이스트, 나머지 19종 해충은 한글 사전순.
 const PESTS = [
   "정상", "검거세미밤나방", "꽃노랑총채벌레", "담배가루이", "담배거세미나방",
   "담배나방", "도둑나방", "먹노린재", "목화바둑명나방", "무잎벌",
   "배추좀나방", "배추흰나비", "벼룩잎벌레", "복숭아혹진딧물",
-  "비단노린재", "썩덩나무노린재", "열대거세미나방", "큰28점박이무당벌레",
-  "톱다리개미허리노린재", "파밤나방"
+  "썩덩나무노린재", "열대거세미나방", "큰28점박이무당벌레",
+  "톱다리개미허리노린재", "파밤나방", "홍비단노린재"
 ];
 
 const API_BASE = 'http://localhost:8000/api/v1/diagnosis';
@@ -193,10 +195,10 @@ export default function DiagnosisPage() {
     }
   };
 
-  const uploadImage = async (file: File, signal?: AbortSignal) => {
+  const uploadImage = async (file: File, signal?: AbortSignal): Promise<{ image_url: string; pest?: string }> => {
     const formData = new FormData();
     formData.append('file', file);
-    
+
     try {
       const res = await fetch(`${API_BASE}/upload`, {
         method: 'POST',
@@ -204,10 +206,10 @@ export default function DiagnosisPage() {
         credentials: 'include',
         signal,
       });
-      
+
       if (!res.ok) throw new Error('이미지 업로드에 실패했습니다.');
       const data = await res.json();
-      return data.image_url;
+      return { image_url: data.image_url, pest: data.pest };
     } catch (error) {
       console.error("Upload error:", error);
       throw error;
@@ -233,21 +235,29 @@ export default function DiagnosisPage() {
     abortControllerRef.current = controller;
 
     try {
-      let imageUrl = null;
+      let imageUrl: string | null = null;
+      let detectedPest: string | undefined;
       const file = fileToUpload || selectedFile;
       if (file) {
         setLoadingMessage("이미지 고해상도 분석 및 최적화 중...");
-        imageUrl = await uploadImage(file, controller.signal);
+        const uploadResult = await uploadImage(file, controller.signal);
+        imageUrl = uploadResult.image_url;
+        detectedPest = uploadResult.pest;
       }
 
-      if (!isTest) {
-        toast('현재 이미지 자동 판독(VLM) 연동 전입니다. 선택된 해충으로 임시 진단합니다.', {
+      // VLM 자동 판독 결과가 있으면 사용, 없으면 (테스트 모드 또는 분류 서버 미가용) testPest 로 폴백
+      const pestToUse = (!isTest && detectedPest) ? detectedPest : testPest;
+
+      if (!isTest && !detectedPest) {
+        toast('VLM 자동 판독 서버에 연결할 수 없어 선택된 해충으로 임시 진단합니다.', {
           icon: '⚠️'
         });
+      } else if (!isTest && detectedPest) {
+        toast.success(`AI 판독: ${detectedPest}`, { icon: '🤖' });
       }
 
       const payload = {
-        pest: testPest,
+        pest: pestToUse,
         crop: selectedCrop || "배추",
         region: selectedRegion || "서울",
         image_url: imageUrl

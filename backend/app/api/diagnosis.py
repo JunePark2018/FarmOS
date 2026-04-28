@@ -22,6 +22,11 @@ from app.models.user import User
 from app.core.config import settings
 
 from app.services.diagnosis_agent import run_diagnosis
+from app.services.pest_classifier import (
+    classify_pest_image,
+    ClassifierError,
+    ConfigurationError as ClassifierConfigError,
+)
 
 from pydantic import BaseModel, Field
 
@@ -77,10 +82,26 @@ async def upload_diagnosis_image(
                 image = await asyncio.to_thread(image.convert, "RGB")
                 
             await asyncio.to_thread(image.save, file_path, "WEBP", quality=85)
-            
-            # 5. 접근 가능한 URL 반환
+
+            # 5. 해충 분류 (RunPod 서버) — 실패해도 image_url 은 정상 반환 (graceful degrade)
+            #    프론트엔드는 pest 가 없으면 testPest 로 폴백한다.
             image_url = f"/uploads/diagnosis/{file_id}.webp"
-            return {"image_url": image_url}
+            response: dict = {"image_url": image_url}
+            try:
+                result = await classify_pest_image(
+                    contents,
+                    filename=file.filename or "image.jpg",
+                    content_type=file.content_type or "image/jpeg",
+                )
+                response["pest"] = result.get("pred")
+                response["pest_raw"] = result.get("raw")
+                response["pest_elapsed_s"] = result.get("elapsed_s")
+            except ClassifierConfigError:
+                logger.info("PEST_CLASSIFIER_URL 미설정 — pest 자동분류 건너뜀")
+            except ClassifierError:
+                logger.exception("pest 자동분류 실패 (image_url=%s) — 폴백 진행", image_url)
+
+            return response
 
         except Image.DecompressionBombError:
             raise HTTPException(
