@@ -87,6 +87,11 @@ class Settings(BaseSettings):
     REVIEW_ANALYSIS_BATCH_SIZE: int = 40
     REVIEW_ANALYSIS_MAX_RETRIES: int = 2
 
+    # 해충 이미지 분류 서버 (RunPod 에 배포된 pest-detector-deploy)
+    # 예: https://<POD_ID>-<PORT>.proxy.runpod.net  (끝에 슬래시 없이)
+    # 비워두면 /diagnosis/upload 가 pest 필드 없이 image_url 만 반환한다.
+    PEST_CLASSIFIER_URL: str = ""
+
     # ── AI Agent (IoT 제어) ──────────────────────────────────────────────────
     AI_AGENT_MODEL: str = ""
     AI_AGENT_LLM_INTERVAL: int = 300
