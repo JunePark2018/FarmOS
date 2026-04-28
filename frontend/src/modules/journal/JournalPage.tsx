@@ -19,7 +19,6 @@ import PhotoLightbox from "./PhotoLightbox";
 
 const API_BASE = "http://localhost:8000/api/v1";
 import MissingFieldsAlert from "./MissingFieldsAlert";
-import DailySummaryCard from "./DailySummaryCard";
 import DailyJournalPanel from "./DailyJournalPanel";
 import type { JournalEntryAPI, STTParseResult } from "@/types";
 import { toLocalDateString } from "@/utils/date";
@@ -57,7 +56,6 @@ export default function JournalPage() {
     parsePhotos,
     uploadPhoto,
     deletePhoto,
-    fetchDailySummary,
     fetchMissingFields,
   } = useJournalData();
   const [filter, setFilter] = useState<string>("all");

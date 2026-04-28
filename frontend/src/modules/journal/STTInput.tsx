@@ -5,7 +5,7 @@ import {
   forwardRef,
   useImperativeHandle,
 } from "react";
-import { MdMic, MdStop, MdAutorenew, MdClose } from "react-icons/md";
+import { MdMic, MdStop, MdClose } from "react-icons/md";
 import { motion, AnimatePresence } from "framer-motion";
 import type { STTParseResult } from "@/types";
 
@@ -54,7 +54,8 @@ const STTInput = forwardRef<STTInputHandle, Props>(function STTInput(
   const [status, setStatus] = useState<STTStatus>("idle");
   const [level, setLevel] = useState<number>(0); // 0~1
   const [elapsed, setElapsed] = useState<number>(0); // seconds
-  const [progress, setProgress] = useState<number>(0); // 0~100
+  // setProgress 만 사용 (구간별 보간으로 진행률 갱신용 — 별도 UI 바인딩 없음)
+  const [, setProgress] = useState<number>(0); // 0~100
   const interpRef = useRef<number | null>(null);
 
   const stopInterp = useCallback(() => {
