@@ -18,8 +18,9 @@ def run():
     try:
         today = now_kst().date()
         # Previous week: Monday to Sunday
-        week_end = today - timedelta(days=today.weekday())  # This Monday
-        week_start = week_end - timedelta(days=7)
+        this_monday = today - timedelta(days=today.weekday())
+        week_end = this_monday - timedelta(days=1)   # Last Sunday
+        week_start = week_end - timedelta(days=6)    # Last Monday
 
         llm = LLMClient()
         service = ReportService(llm_client=llm)

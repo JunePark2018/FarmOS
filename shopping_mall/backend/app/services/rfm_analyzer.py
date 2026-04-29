@@ -41,7 +41,7 @@ class RFMAnalyzer:
             # Calculate RFM values
             orders = (
                 db.query(Order)
-                .filter(Order.user_id == user.id, Order.status != "cancelled")
+                .filter(Order.user_id == user.id, Order.status.notin_(["cancelled", "returned"]))
                 .all()
             )
 

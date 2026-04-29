@@ -21,6 +21,7 @@ import logging
 import os
 import re
 import tempfile
+import threading
 import time
 
 import chromadb.errors
@@ -49,6 +50,7 @@ BM25_INDEX_PATH = str(AI_DATA_DIR / "bm25_index.json")
 # ── BM25 재빌드 디바운스 ──────────────────────────────────────────────────────
 _last_bm25_rebuild: float = 0.0
 _BM25_REBUILD_DEBOUNCE_SEC: float = 30.0
+_bm25_rebuild_lock: threading.Lock = threading.Lock()
 
 # BM25 인덱스에 포함되는 컬렉션 목록 (seed_rag.py _ALL_COLLECTIONS와 동기화)
 # 통합 FAQ 전환 이후: 모든 FAQ 문서는 단일 "faq" 컬렉션에 저장됨
@@ -153,17 +155,29 @@ class FaqSync:
 
     @staticmethod
     def _rebuild_bm25_debounced(client=None) -> None:
-        """30초 디바운스 — 대량 upsert 시 BM25를 매번 재빌드하지 않음."""
+        """30초 디바운스 — 대량 upsert 시 BM25를 매번 재빌드하지 않음.
+
+        락 + 이중 체크(double-checked locking)로 동시 스레드가 모두 시간 체크를
+        통과해 rebuild_bm25를 중복 실행하는 경쟁 조건을 방지합니다.
+        """
         global _last_bm25_rebuild
-        now = time.time()
-        if now - _last_bm25_rebuild < _BM25_REBUILD_DEBOUNCE_SEC:
+        # 1차 체크: 락 획득 전 빠른 경로 (대부분의 호출이 여기서 반환)
+        if time.time() - _last_bm25_rebuild < _BM25_REBUILD_DEBOUNCE_SEC:
             logger.debug("[FaqSync] BM25 재빌드 스킵 (debounce 중)")
             return
+        _bm25_rebuild_lock.acquire()
         try:
-            FaqSync.rebuild_bm25(client)
-            _last_bm25_rebuild = time.time()
-        except Exception as e:
-            logger.error("[FaqSync] BM25 재빌드 실패 (타임스탬프 미갱신 — 다음 호출 시 재시도): %s", e)
+            # 2차 체크: 락 획득 후 재확인 — 대기 중이던 스레드가 중복 실행하지 않도록
+            if time.time() - _last_bm25_rebuild < _BM25_REBUILD_DEBOUNCE_SEC:
+                logger.debug("[FaqSync] BM25 재빌드 스킵 (debounce 중, 락 획득 후 재확인)")
+                return
+            try:
+                FaqSync.rebuild_bm25(client)
+                _last_bm25_rebuild = time.time()
+            except Exception as e:
+                logger.error("[FaqSync] BM25 재빌드 실패 (타임스탬프 미갱신 — 다음 호출 시 재시도): %s", e)
+        finally:
+            _bm25_rebuild_lock.release()
 
     @staticmethod
     def rebuild_bm25(client=None) -> None:

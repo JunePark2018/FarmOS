@@ -24,7 +24,7 @@ def forecast_demand(db: Session, product_id: int, weeks: int = 4) -> dict:
                 OrderItem.product_id == product_id,
                 Order.created_at >= week_start,
                 Order.created_at < week_end,
-                Order.status != "cancelled",
+                Order.status.notin_(["cancelled", "returned"]),
             )
             .scalar()
         )

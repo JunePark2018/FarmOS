@@ -30,7 +30,7 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.database import get_db
+from app.database import get_db, SessionLocal
 from app.models.faq_category import FaqCategory
 from app.models.faq_doc import FaqDoc, CHROMA_COLLECTION
 from app.models.faq_citation import FaqCitation
@@ -237,6 +237,31 @@ def _get_analytics(db: Session, doc_ids: list[int]) -> dict[int, dict]:
     }
 
 
+# ── 백그라운드 태스크 헬퍼 ────────────────────────────────────────────────────────
+
+def _sync_unlinked_docs(doc_ids: list[int]) -> None:
+    """카테고리 삭제 후 미분류 전환된 문서를 ChromaDB에 재동기화합니다.
+
+    백그라운드에서 새 세션을 열어 최신 상태(faq_category_id=None)로 re-query 후 upsert.
+    """
+    from sqlalchemy.orm import joinedload as _joinedload
+
+    db = SessionLocal()
+    try:
+        docs = (
+            db.query(FaqDoc)
+            .options(_joinedload(FaqDoc.faq_category))
+            .filter(FaqDoc.id.in_(doc_ids))
+            .all()
+        )
+        for doc in docs:
+            FaqSync.upsert(doc)
+    except Exception as e:
+        logger.error("[faq_categories] 미분류 문서 ChromaDB 재동기화 실패: %s", e)
+    finally:
+        db.close()
+
+
 # ── 엔드포인트 (카테고리) ──────────────────────────────────────────────────────
 
 @_categories_router.get("", response_model=list[FaqCategoryResponse])
@@ -341,7 +366,13 @@ def update_faq_category(
     # 카테고리 이름이 바뀌면 연결된 FAQ 문서의 ChromaDB 텍스트가 stale해짐
     # (to_chroma_document()가 "[카테고리명] Q: ..." 형식으로 prefix를 포함하므로)
     if body.name is not None and cat.name != old_name:
-        docs = db.query(FaqDoc).filter(FaqDoc.faq_category_id == cat_id).all()
+        from sqlalchemy.orm import joinedload as _joinedload
+        docs = (
+            db.query(FaqDoc)
+            .options(_joinedload(FaqDoc.faq_category))
+            .filter(FaqDoc.faq_category_id == cat_id)
+            .all()
+        )
         for doc in docs:
             background_tasks.add_task(FaqSync.upsert, doc)
         logger.info("[faq_categories] 이름 변경으로 %d개 문서 ChromaDB 재동기화 예약: id=%d", len(docs), cat_id)
@@ -381,6 +412,9 @@ def delete_faq_category(
             ),
         )
 
+    # commit 전에 ID를 캡처 — commit 후 linked_docs 인스턴스는 expired/detached
+    doc_ids = [doc.id for doc in linked_docs] if linked_count > 0 else []
+
     if linked_count > 0:
         # 연결 문서를 미분류(NULL)로 전환
         db.query(FaqDoc).filter(
@@ -393,10 +427,9 @@ def delete_faq_category(
 
     # 카테고리 삭제 후 연결 문서의 ChromaDB 메타데이터가 stale해짐
     # (subcategory_slug / subcategory_name / faq_category_id 필드가 구 카테고리를 가리킴)
-    # commit 후 doc 객체들은 expired 상태이므로 백그라운드에서 reload 시 faq_category_id=None 반영
-    if linked_count > 0:
-        for doc in linked_docs:
-            background_tasks.add_task(FaqSync.upsert, doc)
+    # 백그라운드에서 새 세션으로 re-query → faq_category_id=None 상태로 upsert
+    if doc_ids:
+        background_tasks.add_task(_sync_unlinked_docs, doc_ids)
 
 
 # ── 엔드포인트 (문서) ──────────────────────────────────────────────────────────

@@ -121,9 +121,12 @@ class FaqDoc(Base):
             if cat is not None:
                 base["subcategory_slug"] = cat.slug
                 base["subcategory_name"] = cat.name
-        except Exception:
+        except Exception as e:
             # 세션 분리 상태 — 슬러그 없이 저장 (ChromaDB fallback 검색 가능)
-            pass
+            logger.debug(
+                "[faq_doc] subcategory 메타데이터 로드 실패 (doc_id=%s): %s",
+                self.chroma_doc_id, e, exc_info=True,
+            )
 
         # extra_metadata에서 태그 전파 (콤마 구분 문자열로 저장)
         tags = meta.get("tags")

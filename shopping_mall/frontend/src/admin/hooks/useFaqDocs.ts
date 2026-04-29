@@ -159,8 +159,9 @@ export function useDeleteFaqDoc() {
       await api.delete(`/api/admin/faq-docs/${id}`);
       return id;
     },
-    onSuccess: () => {
+    onSuccess: (_data, id) => {
       queryClient.invalidateQueries({ queryKey: KEYS.docs });
+      queryClient.invalidateQueries({ queryKey: KEYS.detail(id) });
       queryClient.invalidateQueries({ queryKey: KEYS.categories });
     },
   });
@@ -173,8 +174,9 @@ export function useToggleFaqActive() {
       const { data } = await api.put(`/api/admin/faq-docs/${id}`, { is_active });
       return data as FaqDoc;
     },
-    onSuccess: () => {
+    onSuccess: (_data, { id }) => {
       queryClient.invalidateQueries({ queryKey: KEYS.docs });
+      queryClient.invalidateQueries({ queryKey: KEYS.detail(id) });
       queryClient.invalidateQueries({ queryKey: KEYS.categories });
     },
   });

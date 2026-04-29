@@ -419,9 +419,14 @@ def migrate_policy(db, cat_map: dict[str, FaqCategory]) -> list[FaqDoc]:
 
 # ── ChromaDB 동기화 ───────────────────────────────────────────────────────────
 
-def sync_to_chroma(docs: list[FaqDoc]) -> int:
-    """활성 문서를 ChromaDB faq 컬렉션에 일괄 upsert."""
+def sync_to_chroma(docs: list[FaqDoc]) -> tuple[int, int]:
+    """활성 문서를 ChromaDB faq 컬렉션에 일괄 upsert.
+
+    Returns:
+        (synced, failed) — 성공 건수와 실패 건수.
+    """
     synced = 0
+    failed = 0
     for doc in docs:
         if not doc.is_active:
             continue
@@ -429,8 +434,9 @@ def sync_to_chroma(docs: list[FaqDoc]) -> int:
             FaqSync.upsert(doc)
             synced += 1
         except Exception as e:
+            failed += 1
             print(f"    [ChromaDB 오류] {doc.chroma_doc_id}: {e}")
-    return synced
+    return synced, failed
 
 
 # ── 진입점 ────────────────────────────────────────────────────────────────────
@@ -507,8 +513,8 @@ def main() -> None:
             .filter(FaqDoc.id.in_(doc_ids))
             .all()
         )
-        synced = sync_to_chroma(fresh_docs)
-        print(f"  ChromaDB 동기화: {synced}/{len(fresh_docs)}건")
+        synced, failed = sync_to_chroma(fresh_docs)
+        print(f"  ChromaDB 동기화: {synced}/{len(fresh_docs)}건 (실패: {failed}건)")
 
     except Exception as e:
         db.rollback()
@@ -546,11 +552,16 @@ def main() -> None:
 이후부터는 어드민 UI(FaqPage)에서 FAQ를 관리하세요.
 """)
 
-    # 마이그레이션 완료 마커 저장
+    # 마이그레이션 완료 마커 저장 — ChromaDB 동기화 실패가 없을 때만 기록
     from app.core.datetime_utils import now_kst
-    marker.parent.mkdir(parents=True, exist_ok=True)
-    marker.write_text(f"completed at {now_kst().isoformat()}\n")
-    print(f"  마이그레이션 완료 마커 저장: {marker}")
+    if failed == 0:
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text(f"completed at {now_kst().isoformat()}\n")
+        print(f"  마이그레이션 완료 마커 저장: {marker}")
+    else:
+        print(f"\n[경고] ChromaDB 동기화 실패 {failed}건 — 완료 마커를 저장하지 않습니다.")
+        print("  ChromaDB 오류를 확인 후 스크립트를 다시 실행하세요.")
+        raise RuntimeError(f"ChromaDB 동기화 {failed}건 실패")
 
 
 if __name__ == "__main__":
