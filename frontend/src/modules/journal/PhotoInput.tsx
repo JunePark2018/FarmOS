@@ -7,6 +7,7 @@ import {
 } from "react";
 import { MdPhotoCamera, MdClose } from "react-icons/md";
 import type { STTParseResult } from "@/types";
+import { downsampleImage } from "@/utils/imageDownsample";
 
 interface Props {
   onParsed: (
@@ -34,52 +35,6 @@ export interface PhotoInputHandle {
 const MAX_SIDE = 1280;
 const QUALITY = 0.85;
 const MAX_FILES = 10;
-
-async function downsampleImage(
-  file: File,
-  maxSide: number,
-  quality: number,
-): Promise<File> {
-  // 이미 충분히 작으면 패스 (네트워크 비용 우선)
-  if (file.size < 200_000) return file;
-
-  try {
-    const bitmap = await createImageBitmap(file);
-    const ratio = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
-    if (ratio === 1 && file.size < 1_000_000) return file;
-
-    const w = Math.round(bitmap.width * ratio);
-    const h = Math.round(bitmap.height * ratio);
-
-    // OffscreenCanvas 우선, 미지원 시 일반 Canvas
-    let blob: Blob | null = null;
-    if (typeof OffscreenCanvas !== "undefined") {
-      const canvas = new OffscreenCanvas(w, h);
-      const ctx = canvas.getContext("2d");
-      if (!ctx) throw new Error("canvas 2d context 실패");
-      ctx.drawImage(bitmap, 0, 0, w, h);
-      blob = await canvas.convertToBlob({ type: "image/jpeg", quality });
-    } else {
-      const canvas = document.createElement("canvas");
-      canvas.width = w;
-      canvas.height = h;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) throw new Error("canvas 2d context 실패");
-      ctx.drawImage(bitmap, 0, 0, w, h);
-      blob = await new Promise<Blob | null>((resolve) =>
-        canvas.toBlob(resolve, "image/jpeg", quality),
-      );
-    }
-    bitmap.close?.();
-    if (!blob) return file;
-
-    const newName = file.name.replace(/\.[^.]+$/, ".jpg");
-    return new File([blob], newName, { type: "image/jpeg" });
-  } catch {
-    // 다운샘플 실패 시 원본 그대로 (BE max_bytes로 fallback 차단)
-    return file;
-  }
-}
 
 const PhotoInput = forwardRef<PhotoInputHandle, Props>(function PhotoInput(
   { onParsed, parsePhotos, photoContext },

@@ -6,6 +6,7 @@ import type {
   DailySummaryAPI,
   MissingFieldAlert,
 } from "@/types";
+import { downsampleImage } from "@/utils/imageDownsample";
 
 const API_BASE = "http://localhost:8000/api/v1";
 const opts: RequestInit = { credentials: "include" };
@@ -247,8 +248,10 @@ export function useJournalData() {
   const uploadPhoto = useCallback(
     async (file: File): Promise<number | null> => {
       try {
+        // 큰 사진(스마트폰 12MP+) 은 BE max bytes(5MB) 초과 가능 → 다운샘플 적용
+        const downsampled = await downsampleImage(file);
         const form = new FormData();
-        form.append("file", file);
+        form.append("file", downsampled);
         const res = await fetch(`${API_BASE}/journal/photos`, {
           ...opts,
           method: "POST",
