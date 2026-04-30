@@ -1,4 +1,4 @@
-import { useState, forwardRef, useImperativeHandle } from "react";
+import { useState, useRef, forwardRef, useImperativeHandle } from "react";
 import { MdExpandMore, MdExpandLess, MdMic, MdClose, MdAddPhotoAlternate } from "react-icons/md";
 import type { JournalEntryAPI } from "@/types";
 
@@ -90,6 +90,13 @@ const JournalEntryForm = forwardRef<JournalEntryFormHandle, Props>(
     const [photoIds, setPhotoIds] = useState<number[]>(
       initialData?.photos?.map((p) => p.id) ?? initialPhotoIds ?? [],
     );
+    // 폼 진입 시점의 "기존" 사진 ID 집합 — useRef 로 평생 고정 (첫 mount 값 그대로 유지).
+    // ✕ 누른 사진이 originalPhotoIds 에 속하면 즉시 삭제하지 않고 PATCH reconcile
+    // 시점에만 BE 가 정리하도록 미룬다. 그래야 사용자가 편집 중 취소했을 때
+    // 원본 entry 의 사진이 손실되지 않는다 (CodeRabbit 리뷰).
+    const originalPhotoIdsRef = useRef<Set<number>>(
+      new Set(initialData?.photos?.map((p) => p.id) ?? []),
+    );
     const [photoBusy, setPhotoBusy] = useState(false);
 
     const handleAddPhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -109,7 +116,16 @@ const JournalEntryForm = forwardRef<JournalEntryFormHandle, Props>(
     const handleRemovePhoto = async (id: number) => {
       // state 에서 즉시 제거 (UI 반응 빠름)
       setPhotoIds((prev) => prev.filter((p) => p !== id));
-      // 디스크/DB 도 즉시 삭제 — 폼을 닫고 미저장한 경우에도 누수 방지
+
+      // 기존 사진(편집 시작 시점에 entry 와 연결된 사진) 은 즉시 삭제 X.
+      // 사용자가 저장하지 않고 폼을 닫으면 원본 entry 에 그대로 남아있어야 한다.
+      // 저장 시 PATCH 의 photo_ids reconcile 이 BE 측에서 정리한다.
+      if (originalPhotoIdsRef.current.has(id)) {
+        return;
+      }
+
+      // 신규 추가한 임시 사진 (이번 세션에서 uploadPhoto 로 올린 것) 만 즉시 삭제.
+      // 이건 폼을 취소해도 어차피 entry 와 연결되지 않은 orphan 이라 누수 회피용.
       if (deletePhoto) {
         try {
           await deletePhoto(id);
