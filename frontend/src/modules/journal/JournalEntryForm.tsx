@@ -139,6 +139,9 @@ const JournalEntryForm = forwardRef<JournalEntryFormHandle, Props>(
     const handleSubmit = async (e: React.FormEvent) => {
       e.preventDefault();
       if (!fieldName.trim() || !crop.trim()) return;
+      // 사진 업로드 진행 중이면 submit 차단 — 업로드 완료 전 buildBody() 가
+      // 부르면 photo_ids 에 새 사진 ID 가 빠져 첨부 유실 + orphan 발생.
+      if (photoBusy) return;
 
       setSubmitting(true);
       await onSubmit(buildBody());
@@ -390,12 +393,17 @@ const JournalEntryForm = forwardRef<JournalEntryFormHandle, Props>(
           </button>
           <button
             type="submit"
-            disabled={submitting || !fieldName.trim() || !crop.trim()}
+            disabled={
+              submitting || photoBusy || !fieldName.trim() || !crop.trim()
+            }
             className="btn-primary disabled:opacity-50"
+            title={photoBusy ? "사진 업로드 중에는 저장할 수 없습니다." : undefined}
           >
             {submitting
               ? "저장 중..."
-              : submitLabel || (isEdit ? "수정" : "등록")}
+              : photoBusy
+                ? "사진 업로드 중..."
+                : submitLabel || (isEdit ? "수정" : "등록")}
           </button>
         </div>
       </form>
