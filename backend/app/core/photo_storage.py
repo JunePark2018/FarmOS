@@ -101,8 +101,12 @@ async def cleanup_orphans(db: AsyncSession, older_than_hours: int = 24) -> int:
     boot-time 호출용. 짧은 시간 windowed 청소를 가정. 매우 많은 orphan 이 있어도
     한 번의 트랜잭션으로 처리되므로 V1 규모에서는 충분.
 
+    트랜잭션 순서: 경로 수집 → DB delete → commit → (commit 성공 후) 디스크 unlink.
+    commit 전에 unlink 하면 commit 실패 시 DB 에는 row 가 남아있는데 디스크 파일만
+    사라져 정합성이 깨지므로 의도적으로 분리.
+
     Returns:
-        삭제된 사진 수.
+        삭제된 사진 수 (commit 성공 기준).
     """
     from app.models.journal import JournalEntryPhoto
 
@@ -115,9 +119,15 @@ async def cleanup_orphans(db: AsyncSession, older_than_hours: int = 24) -> int:
         )
     ).scalars().all()
 
+    if not rows:
+        return 0
+
+    paths_to_unlink = [(r.file_path, r.thumb_path) for r in rows]
     for r in rows:
-        delete_photo_files(r.file_path, r.thumb_path)
         await db.delete(r)
-    if rows:
-        await db.commit()
+    await db.commit()
+
+    # commit 성공 후에만 디스크 정리. unlink 자체 실패는 후속 cleanup 또는 수동 작업.
+    for fp, tp in paths_to_unlink:
+        delete_photo_files(fp, tp)
     return len(rows)

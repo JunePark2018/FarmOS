@@ -97,9 +97,10 @@ async def lifespan(app: FastAPI):
                 logging.getLogger(__name__).info(
                     "journal_photo_orphans.cleaned count=%d", removed
                 )
-    except Exception as exc:  # noqa: BLE001 — cleanup 실패가 기동 막지 않음
-        logging.getLogger(__name__).warning(
-            "journal_photo_orphans.cleanup_failed err=%s", exc
+    except Exception:  # noqa: BLE001 — cleanup 실패가 기동 막지 않음
+        # exception() 사용 → traceback 포함 자동 기록. 운영자가 즉시 원인 추적 가능.
+        logging.getLogger(__name__).exception(
+            "journal_photo_orphans.cleanup_failed"
         )
 
     # AI Agent Bridge (agent-action-history) — Relay patch 적용 시 활성화.
