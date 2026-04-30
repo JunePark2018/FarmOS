@@ -314,9 +314,14 @@ async def delete_photo(
     ).scalar_one_or_none()
     if not photo or photo.user_id != current_user.id:
         raise HTTPException(404, "사진을 찾을 수 없습니다.")
-    delete_photo_files(photo.file_path, photo.thumb_path)
+    # commit 전에 unlink 하면 commit 실패 시 DB row 는 살아있는데 디스크 파일만 사라져
+    # 이후 다운로드가 깨짐. 경로만 보관하고 commit 성공 후 unlink (journal_store 의
+    # update_entry/delete_entry/cleanup_orphans 와 동일 패턴).
+    file_path = photo.file_path
+    thumb_path = photo.thumb_path
     await db.delete(photo)
     await db.commit()
+    delete_photo_files(file_path, thumb_path)
     return None
 
 
