@@ -8,8 +8,8 @@ import type {
   MissingFieldAlert,
 } from "@/types";
 import { downsampleImage } from "@/utils/imageDownsample";
+import { API_BASE } from "@/utils/api";
 
-const API_BASE = "http://localhost:8000/api/v1";
 const opts: RequestInit = { credentials: "include" };
 
 interface JournalFilters {

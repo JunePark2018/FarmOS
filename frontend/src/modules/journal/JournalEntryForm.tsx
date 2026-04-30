@@ -2,7 +2,7 @@ import { useState, useRef, forwardRef, useImperativeHandle } from "react";
 import { MdExpandMore, MdExpandLess, MdMic, MdClose, MdAddPhotoAlternate } from "react-icons/md";
 import type { JournalEntryAPI } from "@/types";
 
-const API_BASE = "http://localhost:8000/api/v1";
+import AuthenticatedPhoto from "./AuthenticatedPhoto";
 
 export interface JournalEntryFormHandle {
   getFormData: () => Record<string, unknown>;
@@ -337,9 +337,9 @@ const JournalEntryForm = forwardRef<JournalEntryFormHandle, Props>(
                   key={id}
                   className="relative aspect-square rounded-lg overflow-hidden border border-gray-200 bg-gray-50"
                 >
-                  <img
-                    src={`${API_BASE}/journal/photos/${id}?thumb=1`}
-                    alt=""
+                  <AuthenticatedPhoto
+                    photoId={id}
+                    thumb
                     className="w-full h-full object-cover"
                   />
                   <button

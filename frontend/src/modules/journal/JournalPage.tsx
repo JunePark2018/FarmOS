@@ -16,8 +16,7 @@ import JournalEntryForm, {
 import STTInput, { type STTInputHandle } from "./STTInput";
 import PhotoInput, { type PhotoInputHandle } from "./PhotoInput";
 import PhotoLightbox from "./PhotoLightbox";
-
-const API_BASE = "http://localhost:8000/api/v1";
+import AuthenticatedPhoto from "./AuthenticatedPhoto";
 import MissingFieldsAlert from "./MissingFieldsAlert";
 import DailyJournalPanel from "./DailyJournalPanel";
 import type { JournalEntryAPI, STTParseResult } from "@/types";
@@ -695,9 +694,9 @@ export default function JournalPage() {
                                 }}
                                 className="w-24 h-24 rounded-lg overflow-hidden border border-gray-200 bg-gray-50 cursor-zoom-in hover:opacity-80 transition-opacity"
                               >
-                                <img
-                                  src={`${API_BASE}/journal/photos/${p.id}?thumb=1`}
-                                  alt=""
+                                <AuthenticatedPhoto
+                                  photoId={p.id}
+                                  thumb
                                   className="w-full h-full object-cover"
                                 />
                               </button>

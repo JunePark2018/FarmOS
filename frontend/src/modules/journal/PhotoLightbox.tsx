@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { MdClose } from "react-icons/md";
 
-const API_BASE = "http://localhost:8000/api/v1";
+import AuthenticatedPhoto from "./AuthenticatedPhoto";
 
 interface Props {
   photoId: number;
@@ -32,9 +32,8 @@ export default function PhotoLightbox({ photoId, onClose }: Props) {
       >
         <MdClose className="text-2xl" />
       </button>
-      <img
-        src={`${API_BASE}/journal/photos/${photoId}`}
-        alt=""
+      <AuthenticatedPhoto
+        photoId={photoId}
         onClick={(e) => e.stopPropagation()}
         className="max-w-full max-h-full object-contain rounded-lg cursor-default"
       />
