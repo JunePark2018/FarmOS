@@ -194,27 +194,40 @@ async def parse_photos(
 
     # 사진 디스크 저장 + DB 행 생성 (entry_id=null 임시 사진)
     # strict=True: images/files 는 위에서 1:1 로 만들어졌으므로 항상 동일 길이 — 깨지면 즉시 실패.
+    # DB flush/commit 실패 시 이미 디스크에 저장된 파일들이 영구 누수되지 않도록 경로를 추적.
+    saved_disk_paths: list[tuple[str | None, str | None]] = []
     saved_ids: list[int] = []
-    for img_bytes, f in zip(images, files, strict=True):
-        try:
-            meta = save_photo(current_user.id, img_bytes)
-        except Exception as save_err:
-            # 한 장 실패해도 나머지는 진행. 다만 silent 가 아니라 운영자가 인지하도록 warning.
-            logger.warning(
-                "journal.parse_photos.save_photo_failed file=%s err=%s",
-                f.filename, save_err,
+    try:
+        for img_bytes, f in zip(images, files, strict=True):
+            try:
+                meta = save_photo(current_user.id, img_bytes)
+            except Exception as save_err:
+                # 한 장 실패해도 나머지는 진행. silent 가 아니라 운영자가 인지하도록 warning.
+                logger.warning(
+                    "journal.parse_photos.save_photo_failed file=%s err=%s",
+                    f.filename, save_err,
+                )
+                continue
+            # 이 시점부터 디스크 파일이 존재 — DB 단계 실패 시 정리 대상에 포함.
+            saved_disk_paths.append((meta["file_path"], meta["thumb_path"]))
+            photo = JournalEntryPhoto(
+                user_id=current_user.id,
+                original_filename=f.filename,
+                **meta,
             )
-            continue
-        photo = JournalEntryPhoto(
-            user_id=current_user.id,
-            original_filename=f.filename,
-            **meta,
-        )
-        db.add(photo)
-        await db.flush()
-        saved_ids.append(photo.id)
-    if saved_ids:
-        await db.commit()
+            db.add(photo)
+            await db.flush()
+            saved_ids.append(photo.id)
+        if saved_ids:
+            await db.commit()
+    except Exception:
+        # DB flush/commit 실패 — transaction rollback 후 디스크 파일 일괄 정리
+        # (DB 에 row 가 없으니 24h orphan cleanup 으로도 회수 불가능한 영구 누수 차단).
+        await db.rollback()
+        for fp, tp in saved_disk_paths:
+            delete_photo_files(fp, tp)
+        logger.exception("journal.parse_photos.db_persist_failed")
+        raise
 
     result["image_count"] = len(images)
     result["photo_ids"] = saved_ids
