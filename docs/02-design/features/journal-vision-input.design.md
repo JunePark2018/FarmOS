@@ -30,7 +30,7 @@
 | **WHO** | 작업 중인 농부, 멘토/평가자, 팀(STT 인프라 재사용으로 conflict 최소). |
 | **RISK** | (R1) Vision LLM 환각 — 자동 저장 금지, 사용자 검수 필수. (R2) API 비용 — 다운샘플 + 1회 batch 호출 + 일/월 한도. (R3) EXIF 누락 — 정상 fallback. (R4) 멀티이미지 그룹핑 오판 — prompt 가이드 + 사용자 분리/병합 가능. (R5) 농약 라벨 OCR 환각 — 비매칭 시 raw 보존. |
 | **SUCCESS** | (SC-1) 사진 1장 → entry 1건 prefill p95 < 8s. (SC-2) N장 → 1~N entry. (SC-3) 필수 필드 채움률 ≥ 60%. (SC-4) 농약 라벨 매칭 또는 raw 보존. (SC-5) 시연 1분 내 완료. |
-| **SCOPE** | IN: `/journal/parse-photos` API, vision parser/exif utils 모듈, FE PhotoInput 컴포넌트, source="vision" 추가. OUT: 사진 영구 저장, 사진 갤러리 UI, STT+Vision 결합, 파인튜닝, IoT 연계, PDF 사진 첨부. |
+| **SCOPE** | IN: `/journal/parse-photos` API, vision parser/exif utils 모듈, FE PhotoInput 컴포넌트, source="vision" 추가. OUT: STT+Vision 결합, 파인튜닝, IoT 연계, PDF 사진 첨부. **(Note: 사진 영구 저장 + 갤러리 UI 는 v0.1.0 에서 OUT 이었으나 후속 feature `journal-entry-photos` 로 같은 PR 에 함께 머지되어 IN 으로 이동.)** |
 
 ---
 
@@ -42,7 +42,7 @@
 - **사용자 검수 우선**: prefill 후 자동 저장 금지. 환각/오인식의 안전망은 사용자 편집.
 - **저비용 1회 호출**: 사진 N장을 1회 batch 호출로 처리해 비용·지연 절감, LLM이 그룹핑/분리도 함께 판단.
 - **Privacy by default**: 사진은 BE에서 메모리로만 처리, 응답 후 폐기. 디스크/DB 저장 없음.
-- **점진적 확장**: V1은 단일 사용자 manual upload. V2에서 사진 영구 저장·갤러리 타임라인·STT 결합 검토.
+- **점진적 확장**: V1은 단일 사용자 manual upload. ~~V2에서 사진 영구 저장·갤러리 타임라인~~ → **사진 영구 저장 + 갤러리는 후속 feature `journal-entry-photos` 로 같이 머지됨.** STT+Vision 결합은 V2 그대로.
 
 ### 1.2 Design Principles
 
@@ -753,7 +753,7 @@ LiteLLM `config.yaml` 또는 모델 라우팅에 vision-capable 모델이 등록
 
 | 영역 | 처리 |
 |------|------|
-| **사진 저장** | BE 메모리에서만 처리, 응답 후 폐기. 디스크/DB/로그에 사진 bytes 저장 X. |
+| **사진 저장** | ~~BE 메모리에서만 처리, 응답 후 폐기.~~ → **후속 feature `journal-entry-photos` 로 영구 저장 도입.** 원본+썸네일 디스크 저장 (`data/uploads/journal/{user_id}/{uuid}.jpg`), DB row(`journal_entry_photos`) 로 관리, owner-only 다운로드, 24h orphan cleanup. |
 | **EXIF GPS** | LLM prompt에 hint로 전달, 응답 후 폐기. 로그에 GPS 좌표 평문 기록 안 함(소수점 1자리로 마스킹). |
 | **외부 전송** | LiteLLM 프록시 → 모델 사업자(Google) 로 사진 base64 전송. **사용자 동의 문구 필요** (FE 업로드 화면). |
 | **mime/sniffing** | content_type 검사 + Pillow open으로 실 이미지 검증. 비이미지 파일 차단. |
@@ -767,7 +767,7 @@ LiteLLM `config.yaml` 또는 모델 라우팅에 vision-capable 모델이 등록
 
 | ID | Question | V Target |
 |----|----------|----------|
-| Q1 | 사진을 영구 저장해 일지 entry와 연결 표시할지 (사진 갤러리 UI 포함) | V2 |
+| ~~Q1~~ | ~~사진을 영구 저장해 일지 entry와 연결 표시할지 (사진 갤러리 UI 포함)~~ Resolved — 후속 feature `journal-entry-photos` 로 같이 머지됨 | ✅ Done |
 | Q2 | STT(음성 메모) + Vision(사진) 동시 입력 | V2 |
 | Q3 | GPS → 필지 자동 매핑 테이블 (등록된 필지 좌표와 비교) | V2 |
 | Q4 | 사용자별 호출 한도 / 비용 가시화 (월 사용량) | V2 |
@@ -801,3 +801,4 @@ LiteLLM `config.yaml` 또는 모델 라우팅에 vision-capable 모델이 등록
 |---------|------|---------|--------|
 | 0.1.0 | 2026-04-28 | Initial draft (Plan 0.1.0 기반, LiteLLM 프록시 통일, 응답 shape STT와 동일화, 사진 비저장 정책) | JunePark2018 |
 | 0.1.1 | 2026-04-28 | LiteLLM 프록시 등록 모델 점검·실측 검증 — default 모델 `gemini-2.5-flash` → `gpt-5-mini` 변경, BE Step 1~5 코드 검증 통과 | JunePark2018 |
+| 0.1.2 | 2026-04-29 | Post-merge update — 후속 feature `journal-entry-photos` 가 같은 PR 에 함께 머지되어 사진 영구 저장 + 갤러리/lightbox 가 OUT scope 에서 IN 으로 이동. SCOPE/§1.2 §10/§11/Q1 동기화. | JunePark2018 |

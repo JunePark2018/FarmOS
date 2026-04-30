@@ -32,7 +32,7 @@
 | **WHO** | 작업 중인 농부(현장에서 사진을 빠르게 찍어 올리는 1차 사용자), 멘토/평가자(시연에서 "저번 대비 개선" 확인), 팀(STT 인프라 재사용으로 conflict 최소). |
 | **RISK** | (R1) Vision LLM 환각 — 사용자 검수 단계 필수, 자동 저장 금지. (R2) Gemini API 비용/쿼터 — 1일 호출 한도 모니터링, 클라이언트 다운샘플(긴 변 1280px)로 토큰 절감. (R3) EXIF 누락(스크린샷·웹 갤러리) — 추정 실패 시 정상 fallback(현재 날짜/필지 미지정). (R4) 멀티이미지 그룹핑 — 한 번에 N장이 동일 작업인지 다른 작업인지 LLM 판단에 의존, 명확하지 않으면 entry 1건으로 합침. (R5) 농약 라벨 OCR이 잘못된 제품명을 만들어 약사법 이슈 — 기존 농약 DB 퍼지 매칭으로 비매칭 시 raw text 보존. |
 | **SUCCESS** | (SC-1) 사진 1장 업로드 → entry 1건 prefill p95 < 8 s. (SC-2) 사진 N장 업로드 시 entry 수가 LLM 판단 기반 1~N건. (SC-3) prefill된 entry의 필수 필드(work_date/field_name/crop/work_stage) 채움률 ≥ 60% (미채움은 사용자 입력). (SC-4) 농약 라벨이 명확히 보이는 사진은 `usage_pesticide_product`가 기존 농약 DB에 매칭(또는 raw 보존). (SC-5) 시연 시연자가 영농일지 작성 화면에서 사진→entry 흐름을 1분 내에 보여줄 수 있다. |
-| **SCOPE** | IN: BE `/journal/parse-photos` 신규 API, `journal_vision_parser` 모듈, EXIF 추출 유틸, FE 사진 업로드 컴포넌트 + prefill 미리보기 UI, `source` 필드에 `"vision"` 추가, 기존 STT parser와 동일한 entry 배열 응답. OUT: 사진을 BE에 영구 저장(이번 단계는 메모리 처리 후 폐기), 사진 갤러리/타임라인 UI, STT+Vision 동시 입력 결합(V2), 파인튜닝, ESP/IoT 연계, PDF에 사진 첨부. |
+| **SCOPE** | IN: BE `/journal/parse-photos` 신규 API, `journal_vision_parser` 모듈, EXIF 추출 유틸, FE 사진 업로드 컴포넌트 + prefill 미리보기 UI, `source` 필드에 `"vision"` 추가, 기존 STT parser와 동일한 entry 배열 응답. OUT: STT+Vision 동시 입력 결합(V2), 파인튜닝, ESP/IoT 연계, PDF에 사진 첨부. **(Note: 사진 영구 저장 + 갤러리/lightbox 는 본 feature 의 V1 OUT 이었으나, 후속 feature [`journal-entry-photos`](./journal-entry-photos.plan.md) 로 별도 작성되어 같은 PR 에 함께 머지되었음. 따라서 머지된 PR 기준으로는 영구 저장도 IN.)** |
 
 ---
 
@@ -100,8 +100,8 @@
 
 ### 2.2 Out of Scope
 
-- 사진을 BE에 영구 저장 (이번 단계는 in-memory 처리 후 폐기, 영구 저장은 V2)
-- 사진 갤러리/타임라인 UI (별도 feature)
+- ~~사진을 BE에 영구 저장 (이번 단계는 in-memory 처리 후 폐기, 영구 저장은 V2)~~ → **후속 feature [`journal-entry-photos`](./journal-entry-photos.plan.md) 로 분리 작성되어 같은 PR 에 함께 머지됨**
+- ~~사진 갤러리/타임라인 UI (별도 feature)~~ → 위와 동일하게 머지됨
 - STT + Vision 동시 입력 결합 (V2)
 - Vision 파인튜닝 (zero-shot prompt engineering으로 충분, 데이터 누적 후 V3에서 재평가)
 - IoT/ESP 연계
@@ -129,7 +129,7 @@
 | FR-10 | prefill된 entry는 기존 STT 미리보기 폼에 그대로 채워져 사용자가 편집·저장할 수 있다 | High | Pending |
 | FR-11 | 사진 처리 중 진행 상태(업로드/분석)가 UI에 표시된다 | Medium | Pending |
 | FR-12 | LLM 호출 실패 시 사용자에게 명확한 에러 메시지가 표시되고 사진 빈 폼으로 fallback 한다 | Medium | Pending |
-| FR-13 | 사진은 BE에서 메모리로 처리하고 응답 후 폐기한다 (영구 저장 X) | High | Pending |
+| ~~FR-13~~ | ~~사진은 BE에서 메모리로 처리하고 응답 후 폐기한다 (영구 저장 X)~~ Superseded — 후속 feature `journal-entry-photos` 로 영구 저장 도입됨 | — | Superseded |
 | FR-14 | EXIF의 GPS는 정확도 보장 없이 hint 용도로만 사용 — 사용자 위치정보 노출 우려 안내 문구 | Low | Pending |
 
 ### 3.2 Non-Functional Requirements
@@ -234,7 +234,7 @@
 | Vision 모델 | LiteLLM 프록시 등록 vision 모델 중 선택 | **`gpt-5-mini` (현재) / `gemini-2.5-flash` (목표)** | 2026-04-28 LiteLLM 프록시 점검 결과 등록 vision 모델은 GPT-5 family(`gpt-5-mini`, `gpt-5-nano`)뿐이라 즉시 동작 가능한 default로 `gpt-5-mini` 채택. Gemini 2.5 Flash 가 프록시에 등록되면 `LITELLM_VISION_MODEL` 환경변수 한 줄로 전환. |
 | 파인튜닝 | (a) zero/few-shot prompt engineering / (b) Gemma vision 파인튜닝 | **(a)** | 데이터 수집/라벨링/GPU 비용 대비 ROI 낮음, 멘토가 "강제 X"라 했으니 V1은 prompt만, V3에서 실데이터 누적 후 재평가 |
 | 입력 채널 | (a) Vision 단독 / (b) STT+Vision 결합 / (c) 둘 독립 | **(c) 독립 채널** | 사용자가 상황 따라 선택, 결합은 V2에서 추가 |
-| 사진 저장 정책 | (a) BE 영구 저장 / (b) 메모리 처리 후 폐기 / (c) 임시 디스크 캐시 | **(b)** | privacy 우려 + 저장 인프라 추가 회피, 영구 저장은 V2 |
+| 사진 저장 정책 | (a) BE 영구 저장 / (b) 메모리 처리 후 폐기 / (c) 임시 디스크 캐시 | ~~**(b)**~~ → **(a)** | 초안엔 (b)였으나 후속 feature `journal-entry-photos` 로 (a) 로 변경: 사진 영구 저장 + 24h orphan cleanup + owner-only 권한 |
 | 다운샘플 위치 | (a) FE에서만 / (b) BE에서만 / (c) 양쪽 | **(c)** | FE는 네트워크 절감(긴 변 1280px), BE는 안전망(max 5MB) |
 | 멀티이미지 처리 | (a) 사진별 N회 호출 / (b) 1회 batch 호출 (LLM이 그룹핑 판단) | **(b) 1회 batch** | 비용·지연 절감, LLM이 사진 간 관계까지 파악 |
 | EXIF 라이브러리 | (a) `piexif` / (b) `exifread` / (c) `Pillow` 내장 | **(c) Pillow + piexif fallback** | Pillow는 이미 다운샘플로도 필요, piexif는 GPS 변환 보조 |
@@ -403,3 +403,4 @@ frontend/src/
 |---------|------|---------|--------|
 | 0.1.0 | 2026-04-28 | Initial draft (멘토 피드백 반영, STT 인프라 재사용 전제) | JunePark2018 |
 | 0.1.1 | 2026-04-28 | LiteLLM 프록시 등록 모델 점검 결과 반영 — 현재 default `gpt-5-mini`, Gemini 2.5 Flash 는 프록시 등록 시 전환 (실측 검증 완료) | JunePark2018 |
+| 0.1.2 | 2026-04-29 | Post-merge update — 후속 feature `journal-entry-photos` 가 같은 PR 에 함께 머지되어 사진 영구 저장 + 갤러리 + lightbox 가 OUT scope 에서 IN 으로 이동. SCOPE/Out-of-Scope/FR-13/§7.2 동기화. | JunePark2018 |

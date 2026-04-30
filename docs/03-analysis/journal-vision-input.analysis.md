@@ -16,7 +16,7 @@
 | **WHO** | 작업 중인 농부, 멘토/평가자, 팀(STT 인프라 재사용으로 conflict 최소). |
 | **RISK** | R1(Vision 환각→사용자 검수), R2(API 비용→batch+다운샘플), R3(EXIF 누락→fallback), R4(다중이미지 그룹핑 오판→사용자 분리), R5(농약 OCR 환각→DB 매칭). |
 | **SUCCESS** | SC-1 단일 사진 → entry prefill p95 < 8s, SC-2 N장 → 1~N entry, SC-3 필수 필드 채움률 ≥ 60%, SC-4 농약 라벨 매칭/raw 보존, SC-5 시연 1분 내. |
-| **SCOPE** | IN: `/journal/parse-photos` API + vision parser/exif utils + FE PhotoInput + source="vision" 추가. OUT: 사진 영구 저장, 갤러리 UI, STT+Vision 결합, 파인튜닝, IoT 연계, PDF 사진 첨부. |
+| **SCOPE** | IN: `/journal/parse-photos` API + vision parser/exif utils + FE PhotoInput + source="vision" 추가. OUT: STT+Vision 결합, 파인튜닝, IoT 연계, PDF 사진 첨부. **(Note: 사진 영구 저장 + 갤러리는 v0.1.0 OUT 이었으나 후속 feature `journal-entry-photos` 로 같은 PR 에 함께 머지되어 IN 으로 이동.)** |
 
 ---
 
