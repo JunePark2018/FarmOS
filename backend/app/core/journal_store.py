@@ -2,7 +2,7 @@
 
 from datetime import date, datetime, timezone
 
-from sqlalchemy import select, func
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.photo_storage import delete_photo_files
@@ -17,22 +17,25 @@ async def _attach_photos(
 
     다른 사용자 photo 가 섞여 있으면 해당만 무시 (오류 X).
     이미 다른 entry 와 연결된 photo 도 무시 (이중 연결 방지).
+
+    호출자의 트랜잭션 안에서 동작 — 자체 commit 안 함. 호출자가 entry 생성/수정과
+    함께 한 번에 commit 하여 원자성 보장.
+
+    원자적 UPDATE 한 방으로 처리해 select→python 대입 사이의 race condition
+    (동시 두 요청이 같은 photo_id 를 다른 entry 에 붙이려는 경우) 차단.
+    DB 레벨 WHERE entry_id IS NULL 조건이 false 인 row 는 자동 제외.
     """
     if not photo_ids:
         return
-    rows = (
-        await db.execute(
-            select(JournalEntryPhoto).where(
-                JournalEntryPhoto.id.in_(photo_ids),
-                JournalEntryPhoto.user_id == user_id,
-                JournalEntryPhoto.entry_id.is_(None),
-            )
+    await db.execute(
+        update(JournalEntryPhoto)
+        .where(
+            JournalEntryPhoto.id.in_(photo_ids),
+            JournalEntryPhoto.user_id == user_id,
+            JournalEntryPhoto.entry_id.is_(None),
         )
-    ).scalars().all()
-    for r in rows:
-        r.entry_id = entry_id
-    if rows:
-        await db.commit()
+        .values(entry_id=entry_id)
+    )
 
 
 async def create_entry(
@@ -42,11 +45,13 @@ async def create_entry(
     photo_ids = payload.pop("photo_ids", None) or []
     entry = JournalEntry(user_id=user_id, **payload)
     db.add(entry)
-    await db.commit()
-    await db.refresh(entry)
+    # flush 로 entry.id 만 확보하고 commit 은 마지막에 한 번 — entry 생성과 사진
+    # attach 를 한 트랜잭션으로 묶어 부분 성공(entry 만 생기고 photo 미연결) 차단.
+    await db.flush()
     if photo_ids:
         await _attach_photos(db, user_id, entry.id, photo_ids)
-        await db.refresh(entry)
+    await db.commit()
+    await db.refresh(entry)
     return entry
 
 
