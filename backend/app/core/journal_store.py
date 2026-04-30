@@ -120,8 +120,12 @@ async def update_entry(
         setattr(entry, field, value)
     entry.updated_at = datetime.now(timezone.utc)
 
+    # reconcile 로 디스크에서 지울 경로들. commit 성공 후에 unlink 해야
+    # commit 실패 시 DB↔디스크 영속 상태 불일치(파일만 사라지는 케이스) 회피.
+    paths_to_unlink: list[tuple[str | None, str | None]] = []
+
     if new_photo_ids is not None:
-        # reconcile — 빠진 사진은 디스크+DB 제거, 새 사진은 attach
+        # reconcile — 빠진 사진은 DB delete + 경로 수집, 새 사진은 attach
         current = (
             await db.execute(
                 select(JournalEntryPhoto).where(
@@ -132,7 +136,7 @@ async def update_entry(
         new_set = set(new_photo_ids)
         for p in current:
             if p.id not in new_set:
-                delete_photo_files(p.file_path, p.thumb_path)
+                paths_to_unlink.append((p.file_path, p.thumb_path))
                 await db.delete(p)
         added = [pid for pid in new_photo_ids if pid not in {p.id for p in current}]
         if added:
@@ -140,6 +144,11 @@ async def update_entry(
 
     await db.commit()
     await db.refresh(entry)
+
+    # commit 성공 후에만 디스크 파일 unlink (실패 시 orphan 은 후속 cleanup 으로 처리 가능)
+    for fp, tp in paths_to_unlink:
+        delete_photo_files(fp, tp)
+
     return entry
 
 
@@ -147,16 +156,22 @@ async def delete_entry(db: AsyncSession, user_id: str, entry_id: int) -> bool:
     entry = await get_entry(db, user_id, entry_id)
     if not entry:
         return False
-    # 디스크 파일 먼저 정리 — DB cascade 가 사진 행 자동 삭제하지만 디스크는 자동 X
+    # 디스크에서 지울 경로를 먼저 수집만 하고, commit 성공 후에 unlink.
+    # commit 전에 unlink 하면 DB rollback 시 entry/사진 row 는 살아있는데
+    # 디스크 파일만 사라져 이후 다운로드가 깨짐 (영속 상태 불일치).
     photos = (
         await db.execute(
             select(JournalEntryPhoto).where(JournalEntryPhoto.entry_id == entry_id)
         )
     ).scalars().all()
-    for p in photos:
-        delete_photo_files(p.file_path, p.thumb_path)
+    paths_to_unlink = [(p.file_path, p.thumb_path) for p in photos]
+
     await db.delete(entry)
     await db.commit()
+
+    # commit 성공 후 디스크 정리 — 실패 시 orphan 파일은 후속 cleanup 작업으로 회수
+    for fp, tp in paths_to_unlink:
+        delete_photo_files(fp, tp)
     return True
 
 
