@@ -193,12 +193,17 @@ async def parse_photos(
         )
 
     # 사진 디스크 저장 + DB 행 생성 (entry_id=null 임시 사진)
+    # strict=True: images/files 는 위에서 1:1 로 만들어졌으므로 항상 동일 길이 — 깨지면 즉시 실패.
     saved_ids: list[int] = []
-    for img_bytes, f in zip(images, files):
+    for img_bytes, f in zip(images, files, strict=True):
         try:
             meta = save_photo(current_user.id, img_bytes)
-        except Exception:
-            # 한 장 실패해도 나머지는 진행
+        except Exception as save_err:
+            # 한 장 실패해도 나머지는 진행. 다만 silent 가 아니라 운영자가 인지하도록 warning.
+            logger.warning(
+                "journal.parse_photos.save_photo_failed file=%s err=%s",
+                f.filename, save_err,
+            )
             continue
         photo = JournalEntryPhoto(
             user_id=current_user.id,
